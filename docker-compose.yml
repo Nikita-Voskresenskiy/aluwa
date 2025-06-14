@@ -11,20 +11,23 @@ services:
 
   nginx:
     build: ./nginx
-    restart: always
     ports:
       - "80:80"
       - "443:443"
     depends_on:
       - app
     volumes:
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
+      - ./nginx/conf:/etc/nginx/conf
+      - ./nginx/letsencrypt:/etc/letsencrypt
+      - ./nginx/html:/usr/share/nginx/html
+    restart: unless-stopped
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
 
   certbot:
     image: certbot/certbot
+    depends_on:
+      - nginx
     volumes:
-      - ./certbot/www:/var/www/certbot
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/logs:/var/log/letsencrypt
-    command: certonly --webroot --webroot-path=/var/www/certbot --email your@email.com --agree-tos --no-eff-email --force-renewal -d aluwa.ru -d www.aluwa.ru
+      - ./nginx/letsencrypt:/etc/letsencrypt
+      - ./nginx/html:/var/www/html
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
