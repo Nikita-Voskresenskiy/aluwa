@@ -6,15 +6,14 @@ settings = EnvSettings()
 import json
 import logging
 import urllib.parse
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.requests import Request
 from fastapi.templating import Jinja2Templates
-from joserfc import jwt
-from joserfc.errors import JoseError
 
-from auth import auth_router, verify_init_data_is_correct
+
+from auth import auth_router, verify_init_data_is_correct, encode_token, process_token
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -54,16 +53,16 @@ async def middleware(request: Request, call_next):
     template_context = {'request': request, 'next_path': url_safe_path}
     login_wall = templates.TemplateResponse('login.html', template_context)
 
-    token = request.cookies.get(settings.COOKIE_NAME)
-    if not token:
-        return login_wall
-
     try:
-        token_parts = jwt.decode(token, settings.JWT_SECRET_KEY)
-    except JoseError:
+        token_parts = process_token(request)
+    except Exception as e:
+        token_parts = False
+        logger.error(f"Unexpected error in middleware while processing token: {str(e)}", exc_info=True)
+
+    if not token_parts:
         return login_wall
 
-    user_id = token_parts.claims['k']
+    user_id = token_parts.claims['user_id']
     if user_id != settings.BOT_ADMIN_ID:
         return login_wall
 
@@ -119,8 +118,7 @@ async def webapp_auth(request: Request):
             raise HTTPException(status_code=400, detail="Invalid user data in initData")
 
         # Token generation
-        token_payload = {'k': user_id}
-        token = jwt.encode({'alg': 'HS256'}, token_payload, settings.JWT_SECRET_KEY)
+        token = encode_token({'user_id': user_id})
         logger.info(f"Generated JWT token for user {user_id}")
 
         response_data = {
@@ -137,6 +135,38 @@ async def webapp_auth(request: Request):
     except Exception as e:
         logger.error(f"Unexpected error in webapp_auth: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.post("/message_from_bot")
+async def message_from_bot(request: Request):
+    logger.info("Received /message_from_bot request")
+
+    try:
+        body = await request.body()
+        body_str = body.decode()
+        logger.debug(f"Raw request body: {body_str}")
+
+        try:
+            token_parts = process_token(request)
+        except Exception as e:
+            token_parts = False
+            logger.error(f"Unexpected error in middleware while processing token: {str(e)}", exc_info=True)
+        if token_parts:
+            user_id = token_parts.claims['user_id']
+            response_data = {
+            "user_id": user_id
+            }
+
+
+        logger.info("Authentication successful")
+        return JSONResponse(response_data)
+
+    except HTTPException:
+        raise  # Re-raise already logged HTTP exceptions
+    except Exception as e:
+        logger.error(f"Unexpected error in message_from_bot: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 
 if __name__ == '__main__':
     uvicorn.run('main:app', host='0.0.0.0', port=8000)

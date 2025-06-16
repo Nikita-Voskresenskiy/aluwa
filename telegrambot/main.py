@@ -18,6 +18,8 @@ from aiogram.types import (
 )
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from requests import send_authenticated_post_request
+from auth import encode_token
 
 from env_settings import EnvSettings
 settings = EnvSettings()
@@ -60,6 +62,7 @@ class LocationSession:
                     #"user_id": self.user_id
                 })
                 print(self.locations[-1])
+                await send_authenticated_post_request(self.locations[-1], encode_token({'user_id': self.user_id}))
                 self.save_to_file()
             await asyncio.sleep(10)
 
@@ -94,18 +97,10 @@ async def send_welcome(message: Message):
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     # Create a keyboard with a button to request live location
-    builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(
-        text="Share Live Location",
-        request_location=True  # This enables the location request
-    ))
+
 
     await message.answer(
-        "Please share your live location:",
-        reply_markup=builder.as_markup(
-            resize_keyboard=True,
-            one_time_keyboard=True  # Hides keyboard after use
-        )
+        "Please share your live location"
     )
 
 @dp.message(Command("stop_session"))

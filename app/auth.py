@@ -1,14 +1,14 @@
 from env_settings import EnvSettings
 settings = EnvSettings()
 import logging
-import hmac
 import hashlib
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, status, HTTPException
 from fastapi.requests import Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from joserfc import jwt
+from joserfc.errors import JoseError
 
 BOT_TOKEN_HASH = hashlib.sha256(settings.BOT_TOKEN.encode())
 
@@ -79,6 +79,32 @@ async def verify_init_data_is_correct(init_data: Dict[str, Any]) -> bool:
     except Exception as e:
         logger.error(f"Verification error: {str(e)}", exc_info=True)
         return False
+
+def process_token(request: Request):
+    token = request.cookies.get(settings.COOKIE_NAME)
+    if token:
+        logger.debug(f"Cookie. JWT: {token}")
+    if not token:
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return False
+        token = auth_header.split(" ")[1]
+        logger.debug(f"Bearer. JWT: {token}")
+
+    token_parts = False
+    try:
+        token_parts = jwt.decode(token, settings.JWT_SECRET_KEY)
+        return token_parts
+    except JoseError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing Authorization header",
+        )
+
+
+def encode_token(payload: Dict):
+    return jwt.encode({'alg': 'HS256'}, payload, settings.JWT_SECRET_KEY)
+
 async def verify_query_is_correct(params, query_hash):
     data_check_string = '\n'.join(sorted(f'{x}={y}' for x, y in params if x not in ('hash', 'next')))
     computed_hash = hmac.new(BOT_TOKEN_HASH.digest(), data_check_string.encode(), 'sha256').hexdigest()
@@ -96,7 +122,7 @@ async def telegram_callback(
     if not await verify_query_is_correct(params, query_hash):
         return PlainTextResponse('Authorization failed. Please try again', status_code=401)
 
-    token = jwt.encode({'alg': 'HS256'}, {'k': user_id}, settings.JWT_SECRET_KEY)
+    token = encode_token({'user_id': user_id})
     response = RedirectResponse(next_url)
     response.set_cookie(key=settings.COOKIE_NAME, value=token, secure=True, samesite='lax', httponly=True)
     return response
