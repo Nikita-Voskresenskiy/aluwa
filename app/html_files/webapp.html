@@ -1,0 +1,53 @@
+<!-- html_files/webapp.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Telegram WebApp</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        button { padding: 10px 15px; background: #0088cc; color: white; border: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>Welcome to the WebApp</h1>
+        <button onclick="sendAuthRequest()">Authenticate with Telegram</button>
+        <p id="status">Not authenticated</p>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Expand the web app to full view
+        tg.enableClosingConfirmation(); // Optional: confirm before closing
+
+        async function sendAuthRequest() {
+            document.getElementById('status').textContent = "Authenticating...";
+
+            try {
+                const response = await fetch('/webapp-auth', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: tg.initData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('status').textContent = "Authenticated! User ID: " + result.user_id;
+                    // tg.close(); // Uncomment to close after auth
+                } else {
+                    document.getElementById('status').textContent = "Error: " + (result.detail || "Authentication failed");
+                }
+            } catch (error) {
+                document.getElementById('status').textContent = "Network error: " + error.message;
+            }
+        }
+
+        // Make function available globally
+        window.sendAuthRequest = sendAuthRequest;
+    </script>
+</body>
+</html>
