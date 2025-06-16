@@ -7,8 +7,6 @@ services:
     restart: always
     ports:
       - "8000:8000"
-    environment:
-      - APP_ENV=production
 
   nginx:
     build: ./nginx
@@ -32,3 +30,8 @@ services:
       - ./nginx/letsencrypt:/etc/letsencrypt
       - ./nginx/html:/var/www/html
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+  telegrambot:
+    build: ./telegrambot
+    env_file: ./telegrambot/.env
+    restart: always
