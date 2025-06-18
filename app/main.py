@@ -15,6 +15,13 @@ from fastapi.templating import Jinja2Templates
 
 from auth import auth_router, verify_init_data_is_correct, encode_token, process_token
 
+
+from fastapi import APIRouter, Depends
+from database import get_db
+from schemas import LocationCreate
+from routines.locations import get_locations_by_session, create_location
+from sqlalchemy.ext.asyncio import AsyncSession
+
 # Set up logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -166,7 +173,28 @@ async def message_from_bot(request: Request):
         logger.error(f"Unexpected error in message_from_bot: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@app.post("/locations")
+async def create_new_location(
+    location_data: LocationCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Endpoint to create a new location record"""
+    new_loc = await create_location(
+        session=db,
+        session_id=location_data.session_id,
+        latitude=location_data.latitude,
+        longitude=location_data.longitude
+    )
+    return {"message": "Location created", "id": new_loc.session_id}
 
+@app.get("/locations/{session_id}")
+async def get_session_locations(
+    session_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Endpoint to get locations for a session"""
+    locations = await get_locations_by_session(db, session_id)
+    return {"locations": locations}
 
 if __name__ == '__main__':
     uvicorn.run('main:app', host='0.0.0.0', port=8000)

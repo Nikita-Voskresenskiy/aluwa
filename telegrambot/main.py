@@ -18,7 +18,7 @@ from aiogram.types import (
 )
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
-from requests import send_authenticated_post_request
+from requests import send_authenticated_post_request, send_locations
 from auth import encode_token
 
 from env_settings import EnvSettings
@@ -56,13 +56,15 @@ class LocationSession:
             if self.last_location:
                 current_time = time.time()
                 self.locations.append({
-                    "timestamp": datetime.fromtimestamp(current_time).isoformat(),
+                    "session_id": 1,
+                    "custom_timestamp": datetime.fromtimestamp(current_time).isoformat(),
                     "latitude": self.last_location.latitude,
                     "longitude": self.last_location.longitude#,
                     #"user_id": self.user_id
                 })
                 print(self.locations[-1])
-                await send_authenticated_post_request(self.locations[-1], encode_token({'user_id': self.user_id}))
+                #await send_authenticated_post_request(self.locations[-1], encode_token({'user_id': self.user_id}))
+                await send_locations(self.locations[-1], encode_token({'user_id': self.user_id}))
                 self.save_to_file()
             await asyncio.sleep(10)
 
