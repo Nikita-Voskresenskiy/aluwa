@@ -47,7 +47,7 @@ async def middleware(request: Request, call_next):
 
 
     # Bypass auth for auth routes and webapp routes
-    if request.url.path.startswith(('/auth/', '/webapp')):
+    if request.url.path.startswith(('/auth/', '/webapp', '/docs')):
         return await call_next(request)
 
     # Check for Telegram WebApp auth header
@@ -62,6 +62,7 @@ async def middleware(request: Request, call_next):
 
     try:
         token_parts = process_token(request)
+        user_id = token_parts.claims['user_id']
     except Exception as e:
         token_parts = False
         logger.error(f"Unexpected error in middleware while processing token: {str(e)}", exc_info=True)
@@ -69,7 +70,6 @@ async def middleware(request: Request, call_next):
     if not token_parts:
         return login_wall
 
-    user_id = token_parts.claims['user_id']
     if user_id != settings.BOT_ADMIN_ID:
         return login_wall
 
@@ -183,7 +183,8 @@ async def create_new_location(
         session=db,
         session_id=location_data.session_id,
         latitude=location_data.latitude,
-        longitude=location_data.longitude
+        longitude=location_data.longitude,
+        custom_timestamp=location_data.device_timestamp
     )
     return {"message": "Location created", "id": new_loc.session_id}
 

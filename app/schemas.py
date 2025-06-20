@@ -5,4 +5,4 @@ class LocationCreate(BaseModel):
     session_id: int
     latitude: float
     longitude: float
-    timestamp: datetime = None
+    device_timestamp: datetime = None

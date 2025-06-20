@@ -10,7 +10,14 @@ class EnvSettings(BaseSettings):
     POSTGRES_DB: str
     POSTGRES_PORT: int
     POSTGRES_HOST: str
-    PGDATA: str
+    POSTGRES_CONFIG_TCP_KEEPALIVES_IDLE: int
+    POSTGRES_CONFIG_TCP_KEEPALIVES_INTERVAL: int
+    POSTGRES_CONFIG_TCP_KEEPALIVES_COUNT: int
+    SSH_HOST: str
+    SSH_PORT: int
+    SSH_USERNAME: str
+    SSH_PRIVATE_KEY_PATH: str
+    LOCAL: bool = False
 
     class Config:
         env_file = ".env"
