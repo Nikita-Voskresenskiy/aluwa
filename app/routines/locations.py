@@ -1,72 +1,23 @@
 from datetime import datetime
 from geoalchemy2 import WKTElement
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from models import Location  # Import Location model
+from sqlalchemy.orm import Session
+from database import SessionLocal
+from models import Location
+from typing import List, Optional
+from sqlalchemy.exc import SQLAlchemyError
 
-
-async def create_location(
-        session: AsyncSession,
-        session_id: int,
-        latitude: float,
-        longitude: float,
-        custom_timestamp: datetime = None
-) -> Location:
-    """
-    Creates a new location record in the database.
-
-    Args:
-        session: Async SQLAlchemy session
-        session_id: ID of the tracking session
-        latitude: Latitude in decimal degrees (WGS84)
-        longitude: Longitude in decimal degrees (WGS84)
-        custom_timestamp: Optional specific timestamp (defaults to now)
-
-    Returns:
-        The created Location object
-    """
-    # Create a Point geometry (WGS84 SRID 4326)
-    point = WKTElement(f'POINT({longitude} {latitude})', srid=4326)
-
-    # Use current time if no timestamp provided
-    timestamp = custom_timestamp if custom_timestamp else datetime.utcnow()
-
-    # Create new location record
+# routines/locations.py (example)
+def create_location(db: Session, session_id: int, latitude: float, longitude: float, custom_timestamp=None):
+    # Your implementation here
+    # Example:
     new_location = Location(
         session_id=session_id,
-        timestamp=timestamp,
-        geom=point
+        geom=f"POINT({longitude} {latitude})",
+        timestamp=custom_timestamp or datetime.utcnow()
     )
-
-    # Add to session and commit
-    session.add(new_location)
-    await session.commit()
-    await session.refresh(new_location)
-
+    db.add(new_location)
     return new_location
 
-
-async def get_locations_by_session(
-        session: AsyncSession,
-        session_id: int,
-        limit: int = 100
-) -> list[Location]:
-    """
-    Retrieves locations for a specific session.
-
-    Args:
-        session: Async SQLAlchemy session
-        session_id: Session ID to filter by
-        limit: Maximum number of records to return
-
-    Returns:
-        List of Location objects
-    """
-    result = await session.execute(
-        select(Location)
-        .where(Location.session_id == session_id)
-        .order_by(Location.timestamp.desc())
-        .limit(limit)
-    )
-
-    return result.scalars().all()
+def get_locations_by_session(db: Session, session_id: int):
+    # Your implementation here
+    return db.query(Location).filter(Location.session_id == session_id).all()

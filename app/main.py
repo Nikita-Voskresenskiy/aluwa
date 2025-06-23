@@ -17,9 +17,11 @@ from auth import auth_router, verify_init_data_is_correct, encode_token, process
 
 
 from fastapi import APIRouter, Depends
-from database import get_db
+from database import SessionLocal#, get_db
 from schemas import LocationCreate
 from routines.locations import get_locations_by_session, create_location
+from sqlalchemy.orm import Session
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Set up logging
@@ -173,29 +175,39 @@ async def message_from_bot(request: Request):
         logger.error(f"Unexpected error in message_from_bot: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
+
 @app.post("/locations")
-async def create_new_location(
-    location_data: LocationCreate,
-    db: AsyncSession = Depends(get_db)
-):
+def create_new_location(location_data: LocationCreate):
     """Endpoint to create a new location record"""
-    new_loc = await create_location(
-        session=db,
-        session_id=location_data.session_id,
-        latitude=location_data.latitude,
-        longitude=location_data.longitude,
-        custom_timestamp=location_data.device_timestamp
-    )
-    return {"message": "Location created", "id": new_loc.session_id}
+    db = SessionLocal()
+    try:
+        new_loc = create_location(
+            db=db,
+            session_id=location_data.session_id,
+            latitude=location_data.latitude,
+            longitude=location_data.longitude,
+            custom_timestamp=location_data.device_timestamp
+        )
+        db.commit()
+        return {"message": "Location created", "id": new_loc.session_id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 @app.get("/locations/{session_id}")
-async def get_session_locations(
-    session_id: int,
-    db: AsyncSession = Depends(get_db)
-):
-    """Endpoint to get locations for a session"""
-    locations = await get_locations_by_session(db, session_id)
-    return {"locations": locations}
+def get_session_locations(session_id: int):
+    db = SessionLocal()
+    try:
+        locations = get_locations_by_session(db, session_id)
+        return {"locations": locations}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
+
+import psycopg2
 if __name__ == '__main__':
     uvicorn.run('main:app', host='0.0.0.0', port=8000)
