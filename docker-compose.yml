@@ -12,16 +12,12 @@ services:
   db:
     image: postgis/postgis:17-3.5
     env_file: 
-      - ./app/.env
+      - ./db/.env
     restart: always
     ports:
       - "5432:5432"
-    #environment: 
-    #  POSTGRES_USER: ${POSTGRES_USER}
-    #  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    #  POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - ./postgres_data:/var/lib/postgresql/data
+      - ./db/postgres_data:/var/lib/postgresql/data/
     #deploy:
     #  resources:
     #    limits:
