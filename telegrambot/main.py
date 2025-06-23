@@ -56,7 +56,7 @@ class LocationSession:
             if self.last_location:
                 current_time = time.time()
                 self.locations.append({
-                    "session_id": 1,
+                    "session_id": 2,
                     "custom_timestamp": datetime.fromtimestamp(current_time).isoformat(),
                     "latitude": self.last_location.latitude,
                     "longitude": self.last_location.longitude#,

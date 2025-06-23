@@ -10,7 +10,6 @@ class EnvSettings(BaseSettings):
     POSTGRES_DB: str
     POSTGRES_PORT: int
     POSTGRES_HOST: str
-    PGDATA: str
 
     class Config:
         env_file = ".env"
