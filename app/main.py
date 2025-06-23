@@ -62,7 +62,6 @@ async def middleware(request: Request, call_next):
 
     try:
         token_parts = process_token(request)
-        user_id = token_parts.claims['user_id']
     except Exception as e:
         token_parts = False
         logger.error(f"Unexpected error in middleware while processing token: {str(e)}", exc_info=True)
@@ -70,6 +69,7 @@ async def middleware(request: Request, call_next):
     if not token_parts:
         return login_wall
 
+    user_id = token_parts.claims['user_id']
     if user_id != settings.BOT_ADMIN_ID:
         return login_wall
 

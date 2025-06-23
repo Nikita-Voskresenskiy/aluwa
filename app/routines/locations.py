@@ -10,7 +10,7 @@ async def create_location(
         session_id: int,
         latitude: float,
         longitude: float,
-        custom_timestamp: datetime = None
+        custom_timestamp: datetime
 ) -> Location:
     """
     Creates a new location record in the database.

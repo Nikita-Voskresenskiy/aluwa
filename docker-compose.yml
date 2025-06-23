@@ -8,6 +8,9 @@ services:
     restart: always
     ports:
       - "8000:8000"
+    depends_on:
+      - nginx
+      - db
 
   db:
     image: postgis/postgis:17-3.5
@@ -47,23 +50,25 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    depends_on:
-      - app
     volumes:
-      - ./nginx/conf:/etc/nginx/conf
-      - ./nginx/letsencrypt:/etc/letsencrypt
-      - ./nginx/html:/usr/share/nginx/html
+      - ./certbot/letsencrypt:/etc/letsencrypt
+      - ./certbot/wwwcertbot:/var/www/certbot
     restart: unless-stopped
-    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    #command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
 
   certbot:
     image: certbot/certbot
     depends_on:
       - nginx
     volumes:
-      - ./nginx/letsencrypt:/etc/letsencrypt
-      - ./nginx/html:/var/www/html
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+      - ./certbot/letsencrypt:/etc/letsencrypt
+      - ./certbot/wwwcertbot:/var/www/certbot
+      - ./certbot/logs:/var/log/letsencrypt
+    #entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    network_mode: bridge
 
   telegrambot:
     build: ./telegrambot

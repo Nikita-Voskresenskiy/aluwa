@@ -1,0 +1,8 @@
+docker-compose run --rm certbot certonly \
+  --webroot \
+  --webroot-path /var/www/certbot \
+  --email your@email.com \
+  --agree-tos \
+  --no-eff-email \
+  -d yourdomain.com \
+  -d www.yourdomain.com
