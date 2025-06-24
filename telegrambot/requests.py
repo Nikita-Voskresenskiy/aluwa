@@ -1,7 +1,8 @@
 import aiohttp
 from typing import Dict, Any
 
-API_URL = "https://aluwa.ru/message_from_bot"
+from env_settings import EnvSettings
+env = EnvSettings()
 
 
 async def send_authenticated_post_request(payload: Dict, JWT_TOKEN: str):
@@ -18,7 +19,7 @@ async def send_authenticated_post_request(payload: Dict, JWT_TOKEN: str):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                    API_URL,
+                    "{}://{}/message_from_bot".format(env.PROTOCOL, env.DOMAIN_NAME),
                     json=payload,
                     headers=headers
             ) as response:
@@ -46,7 +47,7 @@ async def send_locations(payload: Dict, JWT_TOKEN: str):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                    "https://aluwa.ru/locations",
+                    "{}://{}/locations".format(env.PROTOCOL, env.DOMAIN_NAME),
                     json=payload,
                     headers=headers
             ) as response:

@@ -4,6 +4,7 @@ class EnvSettings(BaseSettings):
     BOT_ADMIN_ID: int
     DEBUG: bool = False
     DOMAIN_NAME: str
+    PROTOCOL: str
     JWT_SECRET_KEY: str
     COOKIE_NAME: str
 

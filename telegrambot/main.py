@@ -48,15 +48,15 @@ class LocationSession:
         self.filename = f"location_sessions/location_session_{user_id}_{int(time.time())}.json"
         self.locations = []
         self.last_location = None
+        self.last_update_timestamp = None
         self.task = None
 
     async def start_recording(self):
         """Start periodic recording every 10 seconds"""
         while self.is_active:
             if self.last_location:
-                current_time = time.time()
                 self.locations.append({
-                    "device_timestamp": datetime.fromtimestamp(current_time).isoformat(),
+                    "device_timestamp": datetime.fromtimestamp(self.last_update_timestamp).isoformat(),
                     "session_id": 3,
                     "latitude": self.last_location.latitude,
                     "longitude": self.last_location.longitude#,
@@ -68,9 +68,10 @@ class LocationSession:
                 self.save_to_file()
             await asyncio.sleep(10)
 
-    def update_location(self, location):
+    def update_location(self, location, update_timestamp):
         """Update the latest location data"""
         self.last_location = location
+        self.last_update_timestamp = update_timestamp
 
     def save_to_file(self):
         """Save current locations to file"""
@@ -119,8 +120,10 @@ async def stop_session(message: Message):
 
 @dp.message(F.location.live_period)
 async def handle_live_location(message: Message):
+    update_timestamp = time.time()
     user_id = message.from_user.id
     location = message.location
+
 
     # Check if user already has an active session
     if user_id in active_sessions:
@@ -131,7 +134,7 @@ async def handle_live_location(message: Message):
 
     # Create new session
     session = LocationSession(user_id)
-    session.update_location(location)
+    session.update_location(location, update_timestamp)
     session.task = asyncio.create_task(session.start_recording())
     active_sessions[user_id] = session
 
@@ -142,12 +145,14 @@ async def handle_live_location(message: Message):
 @dp.message(F.location)
 @dp.edited_message(F.location) #needed to receive updates
 async def handle_location_update(message: Message):
+    update_timestamp = time.time()
     user_id = message.from_user.id
     location = message.location
 
+
     if user_id in active_sessions and active_sessions[user_id].is_active:
         session = active_sessions[user_id]
-        session.update_location(location)
+        session.update_location(location, update_timestamp)
 
 async def on_startup(dispatcher):
     # Create a directory for session files if it doesn't exist
