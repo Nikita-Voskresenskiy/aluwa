@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 import uvicorn
 from env_settings import EnvSettings
-settings = EnvSettings()
+env = EnvSettings()
+from app_logger import logger
 
 import json
-import logging
 import urllib.parse
 from fastapi import HTTPException, status
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -22,12 +22,6 @@ from schemas import LocationCreate
 from routines.locations import get_locations_by_session, create_location
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# Set up logging
-logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 
 app = FastAPI()
 
@@ -57,7 +51,7 @@ async def middleware(request: Request, call_next):
     response = await call_next(request)
     # Original auth flow for non-Telegram WebApp requests
     url_safe_path = urllib.parse.quote(request.url.path, safe='')
-    template_context = {'request': request, 'next_path': url_safe_path}
+    template_context = {'request': request, 'next_path': url_safe_path, 'bot_username': env.BOT_USERNAME}
     login_wall = templates.TemplateResponse('login.html', template_context)
 
     try:
@@ -70,7 +64,7 @@ async def middleware(request: Request, call_next):
         return login_wall
 
     user_id = token_parts.claims['user_id']
-    if user_id != settings.BOT_ADMIN_ID:
+    if user_id != env.BOT_ADMIN_ID:
         return login_wall
 
     return response
@@ -141,36 +135,6 @@ async def webapp_auth(request: Request):
         raise  # Re-raise already logged HTTP exceptions
     except Exception as e:
         logger.error(f"Unexpected error in webapp_auth: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@app.post("/message_from_bot")
-async def message_from_bot(request: Request):
-    logger.info("Received /message_from_bot request")
-
-    try:
-        body = await request.body()
-        body_str = body.decode()
-        logger.debug(f"Raw request body: {body_str}")
-
-        try:
-            token_parts = process_token(request)
-        except Exception as e:
-            token_parts = False
-            logger.error(f"Unexpected error in middleware while processing token: {str(e)}", exc_info=True)
-        if token_parts:
-            user_id = token_parts.claims['user_id']
-            response_data = {
-            "user_id": user_id
-            }
-
-
-        logger.info("Authentication successful")
-        return JSONResponse(response_data)
-
-    except HTTPException:
-        raise  # Re-raise already logged HTTP exceptions
-    except Exception as e:
-        logger.error(f"Unexpected error in message_from_bot: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/locations")

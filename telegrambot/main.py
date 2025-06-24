@@ -22,7 +22,7 @@ from requests import send_authenticated_post_request, send_locations
 from auth import encode_token
 
 from env_settings import EnvSettings
-settings = EnvSettings()
+env = EnvSettings()
 
 
 
@@ -31,7 +31,7 @@ settings = EnvSettings()
 
 # Initialize bot with default properties
 bot = Bot(
-    token=settings.BOT_TOKEN,
+    token=env.BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 dp = Dispatcher()
@@ -56,7 +56,7 @@ class LocationSession:
             if self.last_location:
                 current_time = time.time()
                 self.locations.append({
-                    "custom_timestamp": datetime.fromtimestamp(current_time).isoformat(),
+                    "device_timestamp": datetime.fromtimestamp(current_time).isoformat(),
                     "session_id": 3,
                     "latitude": self.last_location.latitude,
                     "longitude": self.last_location.longitude#,
