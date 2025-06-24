@@ -1,5 +1,5 @@
 .idea
 __pycache__
-.env
+.env*
 telegrambot/location_sessions
 db/postgres_data
