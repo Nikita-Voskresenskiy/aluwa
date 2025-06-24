@@ -34,7 +34,7 @@ async def create_location(
     # Create new location record
     new_location = Location(
         session_id=session_id,
-        timestamp=timestamp,
+        custom_timestamp=timestamp,
         geom=point
     )
 

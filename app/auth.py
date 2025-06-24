@@ -1,5 +1,4 @@
-from env_settings import EnvSettings
-settings = EnvSettings()
+from env_settings import env
 import logging
 import hashlib
 from typing import Annotated
@@ -10,7 +9,7 @@ from fastapi.responses import PlainTextResponse, RedirectResponse
 from joserfc import jwt
 from joserfc.errors import JoseError
 
-BOT_TOKEN_HASH = hashlib.sha256(settings.BOT_TOKEN.encode())
+BOT_TOKEN_HASH = hashlib.sha256(env.BOT_TOKEN.encode())
 
 
 auth_router = APIRouter()
@@ -52,7 +51,7 @@ async def verify_init_data_is_correct(init_data: Dict[str, Any]) -> bool:
         # 3. Compute secret key
         secret_key = hmac.new(
             key=b"WebAppData",
-            msg=settings.BOT_TOKEN.encode(),
+            msg=env.BOT_TOKEN.encode(),
             digestmod=hashlib.sha256
         ).digest()
 
@@ -81,7 +80,7 @@ async def verify_init_data_is_correct(init_data: Dict[str, Any]) -> bool:
         return False
 
 def process_token(request: Request):
-    token = request.cookies.get(settings.COOKIE_NAME)
+    token = request.cookies.get(env.COOKIE_NAME)
     if token:
         logger.debug(f"Cookie. JWT: {token}")
     if not token:
@@ -93,7 +92,7 @@ def process_token(request: Request):
 
     token_parts = False
     try:
-        token_parts = jwt.decode(token, settings.JWT_SECRET_KEY)
+        token_parts = jwt.decode(token, env.JWT_SECRET_KEY)
         return token_parts
     except JoseError:
         raise HTTPException(
@@ -103,7 +102,7 @@ def process_token(request: Request):
 
 
 def encode_token(payload: Dict):
-    return jwt.encode({'alg': 'HS256'}, payload, settings.JWT_SECRET_KEY)
+    return jwt.encode({'alg': 'HS256'}, payload, env.JWT_SECRET_KEY)
 
 async def verify_query_is_correct(params, query_hash):
     data_check_string = '\n'.join(sorted(f'{x}={y}' for x, y in params if x not in ('hash', 'next')))
@@ -124,12 +123,12 @@ async def telegram_callback(
 
     token = encode_token({'user_id': user_id})
     response = RedirectResponse(next_url)
-    response.set_cookie(key=settings.COOKIE_NAME, value=token, secure=True, samesite='lax', httponly=True)
+    response.set_cookie(key=env.COOKIE_NAME, value=token, secure=True, samesite='lax', httponly=True)
     return response
 
 
 @auth_router.get('/logout')
 async def logout():
     response = RedirectResponse('/')
-    response.delete_cookie(key=settings.COOKIE_NAME)
+    response.delete_cookie(key=env.COOKIE_NAME)
     return response

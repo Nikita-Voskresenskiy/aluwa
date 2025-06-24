@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 import uvicorn
-from env_settings import EnvSettings
-env = EnvSettings()
+from env_settings import env
 from app_logger import logger
 
 import json
