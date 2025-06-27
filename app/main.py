@@ -17,8 +17,8 @@ from auth import auth_router, verify_init_data_is_correct, encode_token, process
 
 from fastapi import APIRouter, Depends
 from database import get_db
-from schemas import LocationCreate
-from routines.locations import get_locations_by_session, create_location
+from schemas import RecordLocation, CreateTrackSession
+from routines.locations import get_locations_by_session, record_location, start_session
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -47,7 +47,6 @@ async def middleware(request: Request, call_next):
     if request.headers.get('X-Telegram-WebApp-Auth') == 'true':
         return await call_next(request)
 
-    response = await call_next(request)
     # Original auth flow for non-Telegram WebApp requests
     url_safe_path = urllib.parse.quote(request.url.path, safe='')
     template_context = {'request': request, 'next_path': url_safe_path, 'bot_username': env.BOT_USERNAME}
@@ -62,11 +61,12 @@ async def middleware(request: Request, call_next):
     if not token_parts:
         return login_wall
 
-    user_id = token_parts.claims['user_id']
-    if user_id != env.BOT_ADMIN_ID:
+    telegram_id = token_parts.claims['telegram_id']
+    request.state.telegram_id = telegram_id
+    if request.state.telegram_id != env.BOT_ADMIN_ID:
         return login_wall
 
-    return response
+    return await call_next(request)
 @app.get("/")
 async def read_root():
     return {"message": "Hello from FastAPI!"}
@@ -136,20 +136,30 @@ async def webapp_auth(request: Request):
         logger.error(f"Unexpected error in webapp_auth: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/locations")
-async def create_new_location(
-    location_data: LocationCreate,
+@app.post("/track/location")
+async def record_location_for_session(
+    location_data: RecordLocation,
     db: AsyncSession = Depends(get_db)
 ):
     """Endpoint to create a new location record"""
-    new_loc = await create_location(
-        session=db,
-        session_id=location_data.session_id,
-        latitude=location_data.latitude,
-        longitude=location_data.longitude,
-        custom_timestamp=location_data.device_timestamp
-    )
-    return {"message": "Location created", "id": new_loc.session_id}
+    new_loc = await record_location(session=db, session_id=location_data.session_id, latitude=location_data.latitude,
+                                    longitude=location_data.longitude, custom_timestamp=location_data.device_timestamp, is_paused=location_data.is_paused)
+    return {"message": "Location added"}
+
+
+@app.post("/track/start_session")
+async def start_new_track_session(
+    session_data: CreateTrackSession,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    telegram_id = request.state.telegram_id
+    """Endpoint to create a new location record"""
+    new_session_id = await start_session(session=db, telegram_id=telegram_id, start_timestamp=session_data.start_timestamp,
+                                    live_period=session_data.live_period)
+    return {"message": "Session created", "session_id": new_session_id}
+
+
 
 @app.get("/locations/{session_id}")
 async def get_session_locations(

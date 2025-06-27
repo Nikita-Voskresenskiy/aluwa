@@ -1,0 +1,28 @@
+@startuml telegram_bot_start
+title "Начало работы"
+autonumber
+skinparam {
+  MaxMessageSize 150
+}
+skinparam sequence {
+  ParticipantPadding 50
+}
+participant "Пользователь \nТелеграма" as ct order 20
+participant "Телеграм бот" as tb order 20
+participant "Бэкенд \nFast api" as backend order 30
+database "Postgres" as db order 40
+
+ct -> tb : Отправить команду start
+tb -> backend : Запрос, есть ли пользователь с таким chat_id"
+backend -> backend : Обработать заказ на сервере
+!$st = "статус и стоимость заказа"
+!$er = "ошибку"
+backend -> backend : Обновить $st
+alt #edfff9 "Обработка успешная"
+  backend --> tb :  Передать $st
+  tb -> tb : Отобразить, $st
+else #ffedee "Обработка неуспешная"
+  backend --> tb :  Передать $er
+  tb -> tb : Отобразить, $er
+end
+@enduml

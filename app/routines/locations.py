@@ -2,15 +2,16 @@ from datetime import datetime
 from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from models import Location  # Import Location model
+from models import Location, User, TrackSession  # Import Location model
 
 
-async def create_location(
+async def record_location(
         session: AsyncSession,
         session_id: int,
         latitude: float,
         longitude: float,
-        custom_timestamp: datetime
+        custom_timestamp: datetime,
+        is_paused: bool
 ) -> Location:
     """
     Creates a new location record in the database.
@@ -35,7 +36,8 @@ async def create_location(
     new_location = Location(
         session_id=session_id,
         custom_timestamp=timestamp,
-        geom=point
+        geom=point,
+        is_paused=is_paused
     )
 
     # Add to session and commit
@@ -44,6 +46,44 @@ async def create_location(
     await session.refresh(new_location)
 
     return new_location
+
+async def start_session(
+        session: AsyncSession,
+        telegram_id: int,
+        start_timestamp: datetime,
+        live_period: int
+) -> TrackSession:
+    r = await session.execute(
+        select(User)
+        .where(User.telegram_id == telegram_id)
+    )
+    length = len(r.all())
+    print('--here', )
+    if length == 0:
+        new_user = User(
+            telegram_id=telegram_id,
+        )
+        session.add(new_user)
+        await session.commit()
+        await session.refresh(new_user)
+        user_id = new_user.id
+    else:
+        r = await session.execute(
+            select(User)
+            .where(User.telegram_id == telegram_id)
+            .limit(1)
+        )
+        user_id = r.all()[0][0].id
+    new_session = TrackSession(
+        user_id=user_id,
+        start_timestamp=start_timestamp
+    )
+    session.add(new_session)
+    await session.commit()
+    await session.refresh(new_session)
+    session_id = new_session.session_id
+    return session_id
+
 
 
 async def get_locations_by_session(

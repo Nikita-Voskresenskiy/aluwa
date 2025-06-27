@@ -18,7 +18,7 @@ from aiogram.types import (
 )
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
-from requests import send_authenticated_post_request, send_locations
+from requests import send_authenticated_post_request, send_location, start_session, stop_session
 from auth import encode_token
 
 from env_settings import EnvSettings
@@ -41,44 +41,53 @@ active_sessions = {}
 
 
 
-class LocationSession:
-    def __init__(self, user_id):
+class TrackSession:
+    def __init__(self, user_id, start_timestamp, location):
         self.user_id = user_id
+        self.start_timestamp = start_timestamp
+        self.session_id = -1
+        self.live_period = location.live_period
+
         self.is_active = True
-        self.filename = f"location_sessions/location_session_{user_id}_{int(time.time())}.json"
-        self.locations = []
-        self.last_location = None
-        self.last_update_timestamp = None
+        self.is_paused = False
+
+        self.longitude = None
+        self.latitude = None
+        self.timestamp = None
         self.task = None
 
-    async def start_recording(self):
-        """Start periodic recording every 10 seconds"""
+        self.update_location(location, start_timestamp)
+
+    async def set_session_id(self):
+        payload = {
+            "start_timestamp": datetime.fromtimestamp(self.timestamp).isoformat(),
+            "live_period": self.live_period
+        }
+        result = await start_session(payload, encode_token({'telegram_id': self.user_id}))
+        self.session_id = result.get("session_id", -1)
+
+    async def record_location(self):
+        """Start periodic recording"""
         while self.is_active:
-            if self.last_location:
-                self.locations.append({
-                    "device_timestamp": datetime.fromtimestamp(self.last_update_timestamp).isoformat(),
-                    "session_id": 3,
-                    "latitude": self.last_location.latitude,
-                    "longitude": self.last_location.longitude#,
-                    #"user_id": self.user_id
-                })
-                print(self.locations[-1])
-                #await send_authenticated_post_request(self.locations[-1], encode_token({'user_id': self.user_id}))
-                await send_locations(self.locations[-1], encode_token({'user_id': self.user_id}))
-                self.save_to_file()
-            await asyncio.sleep(10)
+            if self.session_id > 0:
+                payload = {
+                    "device_timestamp": datetime.fromtimestamp(self.timestamp).isoformat(),
+                    "session_id": self.session_id,
+                    "latitude": self.latitude,
+                    "longitude": self.longitude,
+                    "is_paused": self.is_paused
+                }
+                #print(payload)
+                await send_location(payload, encode_token({'telegram_id': self.user_id}))
+                await asyncio.sleep(10)
 
-    def update_location(self, location, update_timestamp):
+    def update_location(self, location, timestamp):
         """Update the latest location data"""
-        self.last_location = location
-        self.last_update_timestamp = update_timestamp
+        self.longitude = location.longitude
+        self.latitude = location.latitude
+        self.timestamp = timestamp
 
-    def save_to_file(self):
-        """Save current locations to file"""
-        with open(self.filename, 'w') as f:
-            json.dump(self.locations, f, indent=4)
-
-    async def stop(self):
+    async def stop_session(self):
         """Stop the recording session"""
         self.is_active = False
         if self.task:
@@ -87,8 +96,11 @@ class LocationSession:
                 await self.task
             except asyncio.CancelledError:
                 pass
-        if self.locations:
-            self.save_to_file()
+    def pause_session(self):
+        self.is_paused = True
+
+    def continue_session(self):
+        self.is_paused = False
 
 
 '''
@@ -103,7 +115,7 @@ async def cmd_start(message: Message):
 
 
     await message.answer(
-        "Please share your live location"
+        "Please share your live location", reply_markup=ReplyKeyboardRemove()
     )
 
 @dp.message(Command("stop_session"))
@@ -111,35 +123,54 @@ async def stop_session(message: Message):
     user_id = message.from_user.id
     if user_id in active_sessions:
         session = active_sessions[user_id]
-        await session.stop()
+        await session.stop_session()
         del active_sessions[user_id]
         await message.answer("Location tracking stopped. Session data saved.")
     else:
         await message.answer("No active session to stop.")
 
+@dp.message(Command("pause_session"))
+async def pause_session(message: Message):
+    user_id = message.from_user.id
+    if user_id in active_sessions:
+        session = active_sessions[user_id]
+        session.pause_session()
+        await message.answer("Location tracking paused. \n/continue_session to continue \n\n /stop_session to stop.")
+    else:
+        await message.answer("No active session to pause.")
 
+@dp.message(Command("continue_session"))
+async def continue_session(message: Message):
+    user_id = message.from_user.id
+    if user_id in active_sessions:
+        session = active_sessions[user_id]
+        session.pause_session()
+        await message.answer("Location tracking continued. \n/pause_session to pause \n\n /stop_session to stop.")
+    else:
+        await message.answer("No active session to pause.")
+
+# session initialisation is here
 @dp.message(F.location.live_period)
 async def handle_live_location(message: Message):
     update_timestamp = time.time()
     user_id = message.from_user.id
     location = message.location
 
-
     # Check if user already has an active session
     if user_id in active_sessions:
         session = active_sessions[user_id]
         if session.is_active:
-            await message.answer("You already have an active session. Use /stop_session to stop it first.")
+            await message.answer("You already have an active session. \n /pause_session to pause \n\n /stop_session to stop.")
             return
 
     # Create new session
-    session = LocationSession(user_id)
-    session.update_location(location, update_timestamp)
-    session.task = asyncio.create_task(session.start_recording())
+    session = TrackSession(user_id, update_timestamp, location)
+    await session.set_session_id()
+    session.task = asyncio.create_task(session.record_location())
     active_sessions[user_id] = session
 
     await message.answer(
-        f"New tracking session started! Data will be saved to {session.filename}. Use /stop_session to stop.")
+        f"New tracking session started! \n /pause_session to pause \n\n /stop_session to stop.")
 
 
 @dp.message(F.location)
@@ -149,14 +180,11 @@ async def handle_location_update(message: Message):
     user_id = message.from_user.id
     location = message.location
 
-
     if user_id in active_sessions and active_sessions[user_id].is_active:
         session = active_sessions[user_id]
         session.update_location(location, update_timestamp)
 
 async def on_startup(dispatcher):
-    # Create a directory for session files if it doesn't exist
-    os.makedirs("location_sessions", exist_ok=True)
     print("Bot started")
 
 
