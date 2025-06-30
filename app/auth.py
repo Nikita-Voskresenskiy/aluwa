@@ -121,7 +121,7 @@ async def telegram_callback(
     if not await verify_query_is_correct(params, query_hash):
         return PlainTextResponse('Authorization failed. Please try again', status_code=401)
 
-    token = encode_token({'user_id': user_id})
+    token = encode_token({'telegram_id': user_id})
     response = RedirectResponse(next_url)
     response.set_cookie(key=env.COOKIE_NAME, value=token, secure=True, samesite='lax', httponly=True)
     return response

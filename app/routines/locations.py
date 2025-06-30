@@ -3,7 +3,7 @@ from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from models import Location, User, TrackSession  # Import Location model
-
+from sqlalchemy import func
 
 async def record_location(
         session: AsyncSession,
@@ -58,7 +58,6 @@ async def start_session(
         .where(User.telegram_id == telegram_id)
     )
     length = len(r.all())
-    print('--here', )
     if length == 0:
         new_user = User(
             telegram_id=telegram_id,
@@ -86,27 +85,54 @@ async def start_session(
 
 
 
-async def get_locations_by_session(
+async def get_sessions_by_telegram_id(
         session: AsyncSession,
-        session_id: int,
-        limit: int = 100
-) -> list[Location]:
-    """
-    Retrieves locations for a specific session.
+        telegram_id: int,
+        #start_num: int = 0,
+        #rows_num: int = 100
+) -> list[TrackSession]:
 
-    Args:
-        session: Async SQLAlchemy session
-        session_id: Session ID to filter by
-        limit: Maximum number of records to return
-
-    Returns:
-        List of Location objects
-    """
     result = await session.execute(
-        select(Location)
-        .where(Location.session_id == session_id)
-        .order_by(Location.timestamp.desc())
-        .limit(limit)
+        select(TrackSession)
+        .join(User, TrackSession.user_id == User.id)
+        .where(User.telegram_id == telegram_id)
+        .order_by(TrackSession.start_timestamp.asc())
+        #.limit(start_num, rows_num)
     )
 
     return result.scalars().all()
+
+async def get_coordinates_by_session_id(
+        session: AsyncSession,
+        track_session_id: int,
+        telegram_id: int,
+        #start_num: int = 0,
+        #rows_num: int = 100
+) -> list[Location]:
+
+    #check if user with telegram_id can acceesss track session with track_sesion_id
+    r = await session.execute(
+        select(TrackSession).join(User, TrackSession.user_id == User.id)
+        .where(TrackSession.session_id == track_session_id)
+        .where(User.telegram_id == telegram_id)
+    )
+    r1 = r.scalars().all()
+    length = len(r1)
+
+    if (length > 0):
+        r = await session.execute(
+            select(
+                func.ST_X(Location.geom).label('longitude'),
+                func.ST_Y(Location.geom).label('latitude'),
+                Location.custom_timestamp,
+                Location.is_paused,
+            )
+            .where(Location.session_id == track_session_id)
+            .order_by(Location.custom_timestamp.asc())
+            #.limit(start_num, rows_num)
+        )
+        return r.all()
+    else:
+        raise Exception("User has no access to track session")
+
+

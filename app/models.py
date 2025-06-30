@@ -6,7 +6,7 @@ from database import Base
 class Location(Base):
     __tablename__ = "locations"
 
-    session_id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey('track_sessions.session_id'), primary_key=True, index=True)
     custom_timestamp = Column(DateTime(timezone=True), primary_key=True)
     #timestamp = Column(DateTime)
     # Using PostGIS geometry (Point type in this example)

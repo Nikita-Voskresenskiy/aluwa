@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Track Sessions</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        button { padding: 10px 15px; background: #0088cc; color: white; border: none; border-radius: 5px; }
+    </style>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            padding: 10px;
+            background-color: #f5f5f5;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #4a6fa5;
+            color: white;
+            border-radius: 5px;
+        }
+
+        .cards-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+
+        .card:active {
+            transform: scale(0.98);
+        }
+
+        .card-name {
+            font-weight: bold;
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+
+        .card-date {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .map-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white;
+            z-index: 1000;
+            display: none;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .close-map {
+            position: absolute;
+            top: 15px;  /* Increased from 10px */
+            right: 15px; /* Increased from 10px */
+            z-index: 1001;
+            background: rgba(255,255,255,0.9); /* More opaque white */
+            border: 2px solid #333; /* Added border */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            font-size: 24px; /* Increased from 20px */
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3); /* Stronger shadow */
+            cursor: pointer;
+            color: #333; /* Dark color for the X */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            line-height: 1;
+        }
+
+        .loading {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 5px;
+            z-index: 1001;
+        }
+
+        .map-loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            z-index: 1002;
+            display: none;
+        }
+
+        .auth-status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            text-align: center;
+            display: none;
+        }
+
+        .auth-success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .auth-error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>Welcome to the WebApp</h1>
+        <div id="authStatus" class="auth-status"></div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Expand the web app to full view
+        tg.enableClosingConfirmation(); // Optional: confirm before closing
+
+        let authToken = null;
+        const authStatusElement = document.getElementById('authStatus');
+
+        async function sendAuthRequest() {
+            authStatusElement.textContent = "Authenticating...";
+            authStatusElement.className = "auth-status";
+            authStatusElement.style.display = "block";
+
+            try {
+                const response = await fetch('/webapp-auth', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: tg.initData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    authToken = result.token || result.access_token; // Adjust based on your backend response
+                    authStatusElement.textContent = "Authenticated successfully!";
+                    authStatusElement.className = "auth-status auth-success";
+
+                    // Initialize the app after successful auth
+                    init();
+                } else {
+                    throw new Error(result.detail || "Authentication failed");
+                }
+            } catch (error) {
+                authStatusElement.textContent = "Error: " + error.message;
+                authStatusElement.className = "auth-status auth-error";
+                console.error('Authentication error:', error);
+            }
+        }
+
+        // Run auth immediately when page loads
+        document.addEventListener('DOMContentLoaded', sendAuthRequest);
+    </script>
+    <div class="header">
+        <h1>Tracking Sessions</h1>
+    </div>
+
+    <div class="cards-container" id="cardsContainer">
+        <!-- Cards will be dynamically inserted here -->
+    </div>
+
+    <div class="map-container" id="mapContainer">
+        <button class="close-map" id="closeMap">×</button>
+        <div id="map"></div>
+        <div class="map-loading" id="mapLoading">Loading map...</div>
+    </div>
+
+    <div class="loading" id="loadingIndicator">
+        Loading map data...
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        // DOM elements
+        const cardsContainer = document.getElementById('cardsContainer');
+        const mapContainer = document.getElementById('mapContainer');
+        const closeMapBtn = document.getElementById('closeMap');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const mapLoading = document.getElementById('mapLoading');
+        let map;
+        let tileLayer;
+        let markers = [];
+        let cardsData = [];
+
+        // Initialize the page
+        async function init() {
+            try {
+                showLoading();
+                cardsData = await fetchSessions();
+                renderCards();
+                setupEventListeners();
+            } catch (error) {
+                console.error('Error initializing:', error);
+                // Error already shown by fetch functions
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Fetch sessions from backend with auth token
+        async function fetchSessions() {
+            if (!authToken) {
+                throw new Error('Not authenticated');
+            }
+
+            try {
+                const response = await fetch('/track/sessions', {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                // Debugging: log the response
+                console.log('API Response:', data);
+                
+                // Check for error in response
+                if (data.error) {
+                    throw new Error(data.message || 'Server returned an error');
+                }
+                
+                // Handle case where result is a JSON string
+                let resultData = data.result;
+                if (typeof resultData === 'string') {
+                    try {
+                        resultData = JSON.parse(resultData);
+                    } catch (parseError) {
+                        throw new Error('Failed to parse JSON string in result field');
+                    }
+                }
+                
+                // Verify result exists and is an array
+                if (!resultData || !Array.isArray(resultData)) {
+                    throw new Error('Invalid data format: expected array in result field');
+                }
+                
+                // Process the sessions data
+                return resultData.map(session => ({
+                    id: session.session_id,
+                    name: `Session ${session.session_id}`,
+                    date: session.start_timestamp,
+                    coordinates: []
+                })).sort((a, b) => new Date(b.date) - new Date(a.date));
+                
+            } catch (error) {
+                console.error('Error fetching sessions:', error);
+                alert('Error loading sessions: ' + error.message);
+                throw error;
+            }
+        }
+
+        // Fetch coordinates from backend with auth token
+        async function fetchCoordinates(sessionId) {
+            if (!authToken) {
+                throw new Error('Not authenticated');
+            }
+
+            try {
+                const response = await fetch(`/track/sessions/${sessionId}/coordinates`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                // Check for error in response
+                if (data.error) {
+                    throw new Error(data.message || 'Server returned an error');
+                }
+                
+                // Handle case where result is a JSON string
+                let resultData = data.result;
+                if (typeof resultData === 'string') {
+                    try {
+                        resultData = JSON.parse(resultData);
+                    } catch (parseError) {
+                        throw new Error('Failed to parse JSON string in result field');
+                    }
+                }
+                
+                // Verify result exists and is an array
+                if (!resultData || !Array.isArray(resultData)) {
+                    throw new Error('Invalid data format: expected array in result field');
+                }
+                
+                // Transform coordinates to the format expected by the map
+                return resultData.map(point => ({
+                    lat: point.lat,
+                    lng: point.lon,  // Note: converting 'lon' to 'lng' for Leaflet compatibility
+                    timestamp: point.t,
+                    isPause: point.p
+                }));
+                
+            } catch (error) {
+                console.error('Error fetching coordinates:', error);
+                alert('Error loading coordinates: ' + error.message);
+                throw error;
+            }
+        }
+        
+
+        // Render all cards
+        function renderCards() {
+            cardsContainer.innerHTML = '';
+
+            if (cardsData.length === 0) {
+                cardsContainer.innerHTML = '<div class="card">No tracking sessions found</div>';
+                return;
+            }
+
+            cardsData.forEach(card => {
+                const cardElement = document.createElement('div');
+                cardElement.className = 'card';
+                cardElement.dataset.id = card.id;
+
+                cardElement.innerHTML = `
+                    <div class="card-name">${card.name}</div>
+                    <div class="card-date">${formatDate(card.date)}</div>
+                `;
+
+                cardsContainer.appendChild(cardElement);
+            });
+        }
+
+        // Format date for display
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            const options = {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            };
+            return date.toLocaleDateString(undefined, options);
+        }
+
+        // Set up event listeners
+        function setupEventListeners() {
+            // Card click handler
+            document.querySelectorAll('.card').forEach(card => {
+                card.addEventListener('click', async function() {
+                    const cardId = this.dataset.id;
+                    showLoading();
+
+                    try {
+                        const session = cardsData.find(s => s.id == cardId);
+                        if (!session) {
+                            throw new Error('Session not found');
+                        }
+
+                        const coordinates = session.coordinates.length > 0
+                            ? session.coordinates
+                            : await fetchCoordinates(cardId);
+
+                        showMap(coordinates);
+                    } catch (error) {
+                        console.error('Error:', error);
+                        alert('Failed to load map data: ' + error.message);
+                    } finally {
+                        hideLoading();
+                    }
+                });
+            });
+
+            // Close map button
+            closeMapBtn.addEventListener('click', hideMap);
+        }
+
+        // Show loading indicator
+        function showLoading() {
+            loadingIndicator.style.display = 'block';
+        }
+
+        // Hide loading indicator
+        function hideLoading() {
+            loadingIndicator.style.display = 'none';
+        }
+
+        // Show map with coordinates
+        function showMap(coordinates) {
+            if (!coordinates || coordinates.length === 0) {
+                alert('No coordinates available for this session');
+                return;
+            }
+
+            // Show map container
+            mapContainer.style.display = 'block';
+            document.body.style.overflow = 'hidden';
+
+            // Initialize map if not already done
+            if (!map) {
+                map = L.map('map', {
+                    preferCanvas: true,
+                    zoomControl: false
+                }).setView([coordinates[0].lat, coordinates[0].lng], 13);
+
+                // Add optimized zoom control
+                L.control.zoom({
+                    position: 'bottomright'
+                }).addTo(map);
+
+                // Create optimized tile layer
+                tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                    subdomains: 'abc',
+                    reuseTiles: true,
+                    updateWhenIdle: true,
+                    maxZoom: 19,
+                    minZoom: 1
+                });
+
+                // Add loading handlers
+                tileLayer.on('loading', function() {
+                    mapLoading.style.display = 'block';
+                });
+
+                tileLayer.on('load', function() {
+                    mapLoading.style.display = 'none';
+                });
+
+                tileLayer.addTo(map);
+            } else {
+                map.setView([coordinates[0].lat, coordinates[0].lng], 13);
+            }
+
+            // Clear existing markers
+            markers.forEach(marker => map.removeLayer(marker));
+            markers = [];
+
+            // Add new markers (using circle markers for better performance)
+            coordinates.forEach(coord => {
+                const marker = L.circleMarker([coord.lat, coord.lng], {
+                    radius: 8,
+                    fillColor: "#3388ff",
+                    color: "#000",
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                }).addTo(map);
+                markers.push(marker);
+            });
+
+            // If multiple coordinates, draw a polyline
+            if (coordinates.length > 1) {
+                const latLngs = coordinates.map(coord => [coord.lat, coord.lng]);
+                const polyline = L.polyline(latLngs, {color: '#3388ff'}).addTo(map);
+                markers.push(polyline);
+                map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
+            }
+        }
+
+        // Hide map
+        function hideMap() {
+            mapContainer.style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+    </script>
+</body>
+</html>

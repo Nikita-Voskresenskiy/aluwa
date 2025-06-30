@@ -36,7 +36,7 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    document.getElementById('status').textContent = "Authenticated! User ID: " + result.user_id;
+                    document.getElementById('status').textContent = "Authenticated! User ID: " + result.telegram_id;
                     // tg.close(); // Uncomment to close after auth
                 } else {
                     document.getElementById('status').textContent = "Error: " + (result.detail || "Authentication failed");

@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
-
+from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
+import json
 from env_settings import env
 
 DATABASE_URL = env.DATABASE_URL_asyncpg
