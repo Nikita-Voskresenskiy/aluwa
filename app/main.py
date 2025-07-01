@@ -18,7 +18,7 @@ from auth import auth_router, verify_init_data_is_correct, encode_token, process
 from fastapi import APIRouter, Depends
 from database import get_db
 from schemas import RecordLocation, CreateTrackSession
-from routines.locations import get_sessions_by_telegram_id, get_coordinates_by_session_id, record_location, start_session
+from queries.locations import get_sessions_by_telegram_id, get_coordinates_by_session_id, record_location, start_session
 from sqlalchemy.ext.asyncio import AsyncSession
 
 

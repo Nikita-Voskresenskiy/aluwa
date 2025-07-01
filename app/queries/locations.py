@@ -5,34 +5,38 @@ from sqlalchemy.future import select
 from models import Location, User, TrackSession  # Import Location model
 from sqlalchemy import func
 
+from error_handlers import SessionAccessError
+
+async def can_access_session(
+    db: AsyncSession,
+    telegram_id: int,
+    session_id: int
+) -> bool:
+    """Check if user owns the track session"""
+    result = await db.execute(
+        select(TrackSession)
+        .join(User, TrackSession.user_id == User.id)
+        .where(TrackSession.session_id == session_id)
+        .where(User.telegram_id == telegram_id)
+    )
+    return len(result.scalars().all()) > 0
+
 async def record_location(
-        session: AsyncSession,
-        session_id: int,
-        latitude: float,
-        longitude: float,
-        custom_timestamp: datetime,
-        is_paused: bool
+    session: AsyncSession,
+    session_id: int,
+    telegram_id: int,  # Add telegram_id parameter
+    latitude: float,
+    longitude: float,
+    custom_timestamp: datetime,
+    is_paused: bool
 ) -> Location:
-    """
-    Creates a new location record in the database.
+    """Create location record with authorization check"""
+    if not await can_access_session(session, telegram_id, session_id):
+        raise ValueError("User cannot add to this track session")
 
-    Args:
-        session: Async SQLAlchemy session
-        session_id: ID of the tracking session
-        latitude: Latitude in decimal degrees (WGS84)
-        longitude: Longitude in decimal degrees (WGS84)
-        custom_timestamp: Optional specific timestamp (defaults to now)
-
-    Returns:
-        The created Location object
-    """
-    # Create a Point geometry (WGS84 SRID 4326)
     point = WKTElement(f'POINT({longitude} {latitude})', srid=4326)
-
-    # Use current time if no timestamp provided
     timestamp = custom_timestamp if custom_timestamp else datetime.utcnow()
 
-    # Create new location record
     new_location = Location(
         session_id=session_id,
         custom_timestamp=timestamp,
@@ -40,11 +44,9 @@ async def record_location(
         is_paused=is_paused
     )
 
-    # Add to session and commit
     session.add(new_location)
     await session.commit()
     await session.refresh(new_location)
-
     return new_location
 
 async def start_session(
@@ -103,36 +105,23 @@ async def get_sessions_by_telegram_id(
     return result.scalars().all()
 
 async def get_coordinates_by_session_id(
-        session: AsyncSession,
-        track_session_id: int,
-        telegram_id: int,
-        #start_num: int = 0,
-        #rows_num: int = 100
+    session: AsyncSession,
+    track_session_id: int,
+    telegram_id: int,
 ) -> list[Location]:
+    if not await can_access_session(session, telegram_id, track_session_id):
+        raise SessionAccessError("User has no access to this track session")
 
-    #check if user with telegram_id can acceesss track session with track_sesion_id
-    r = await session.execute(
-        select(TrackSession).join(User, TrackSession.user_id == User.id)
-        .where(TrackSession.session_id == track_session_id)
-        .where(User.telegram_id == telegram_id)
-    )
-    r1 = r.scalars().all()
-    length = len(r1)
-
-    if (length > 0):
-        r = await session.execute(
-            select(
-                func.ST_X(Location.geom).label('longitude'),
-                func.ST_Y(Location.geom).label('latitude'),
-                Location.custom_timestamp,
-                Location.is_paused,
-            )
-            .where(Location.session_id == track_session_id)
-            .order_by(Location.custom_timestamp.asc())
-            #.limit(start_num, rows_num)
+    result = await session.execute(
+        select(
+            func.ST_X(Location.geom).label('longitude'),
+            func.ST_Y(Location.geom).label('latitude'),
+            Location.custom_timestamp,
+            Location.is_paused,
         )
-        return r.all()
-    else:
-        raise Exception("User has no access to track session")
+        .where(Location.session_id == track_session_id)
+        .order_by(Location.custom_timestamp.asc())
+    )
+    return result.all()
 
 
