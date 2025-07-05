@@ -142,10 +142,12 @@ async def webapp_auth(request: Request):
 @app.post("/track/location")
 async def record_location_for_session(
     location_data: RecordLocation,
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
+    telegram_id = request.state.telegram_id
     """Endpoint to create a new location record"""
-    new_loc = await record_location(session=db, session_id=location_data.session_id, latitude=location_data.latitude,
+    new_loc = await record_location(session=db, session_id=location_data.session_id, telegram_id=telegram_id, latitude=location_data.latitude,
                                     longitude=location_data.longitude, custom_timestamp=location_data.device_timestamp, is_paused=location_data.is_paused)
     return {"message": "Location added"}
 
