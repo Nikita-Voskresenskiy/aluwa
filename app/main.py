@@ -77,7 +77,7 @@ async def read_root():
 @app.get("/webapp", response_class=HTMLResponse)
 async def webapp_interface(request: Request):
     #return templates.TemplateResponse("webapp.html", {"request": request, "title": "Telegram WebApp"})
-    return templates.TemplateResponse("trackpage.html", {"request": request, "title": "Telegram WebApp"})
+    return templates.TemplateResponse("trackpage.html", {"request": request, "title": "Telegram WebApp", 'cookie_name': env.COOKIE_NAME})
 
 @app.post("/webapp-auth")
 async def webapp_auth(request: Request):
