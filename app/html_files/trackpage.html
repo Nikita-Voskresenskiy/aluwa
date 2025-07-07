@@ -161,7 +161,9 @@
         tg.expand(); // Expand the web app to full view
         tg.enableClosingConfirmation(); // Optional: confirm before closing
 
-        let authToken = getCookie('{{ cookie_name }}'); // Try to get token from cookie first
+        // Get the cookie name from the template variable
+        const cookieName = "{{ cookie_name }}";
+        let authToken = cookieName ? getCookie(cookieName) : null;
         const authStatusElement = document.getElementById('authStatus');
 
         async function sendAuthRequest() {
