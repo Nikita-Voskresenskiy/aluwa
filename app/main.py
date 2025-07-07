@@ -37,38 +37,31 @@ app.mount('/auth', auth_router)
 
 @app.middleware('http')
 async def middleware(request: Request, call_next):
-
-
-    # Bypass auth for auth routes and webapp routes
-    if request.url.path.startswith(('/auth/', '/webapp', '/docs')):
+    # Bypass auth for auth routes, static files, and docs
+    if request.url.path.startswith(('/auth/', '/docs', '/favicon.ico')):
         return await call_next(request)
 
-    # Check for Telegram WebApp auth header
+    # Handle WebApp flow
     if request.headers.get('X-Telegram-WebApp-Auth') == 'true':
+        # WebApp-specific checks
         return await call_next(request)
 
-    # Original auth flow for non-Telegram WebApp requests
-    url_safe_path = urllib.parse.quote(request.url.path, safe='')
-    template_context = {'request': request, 'next_path': url_safe_path, 'bot_username': env.BOT_USERNAME}
-    login_wall = templates.TemplateResponse('login.html', template_context)
-
+    # Browser flow - check for cookie auth
     try:
         token_parts = process_token(request)
+        if token_parts:
+            request.state.telegram_id = token_parts.claims['telegram_id']
+            return await call_next(request)
     except Exception as e:
-        token_parts = False
-        logger.error(f"Unexpected error in middleware while processing token: {str(e)}", exc_info=True)
+        logger.error(f"Error processing token: {str(e)}", exc_info=True)
 
-    if not token_parts:
-        return login_wall
-    try:
-        telegram_id = token_parts.claims['telegram_id']
-        request.state.telegram_id = telegram_id
-        #if request.state.telegram_id != env.BOT_ADMIN_ID:
-        #    return login_wall
-    except:
-        return login_wall
-
-    return await call_next(request)
+    # Not authenticated - show login wall
+    url_safe_path = urllib.parse.quote(request.url.path, safe='')
+    return templates.TemplateResponse('login.html', {
+        'request': request,
+        'next_path': url_safe_path,
+        'bot_username': env.BOT_USERNAME
+    })
 @app.get("/")
 async def read_root():
     return {"message": "Hello from FastAPI!"}
