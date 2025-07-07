@@ -150,34 +150,52 @@
     </div>
 
     <script>
-        // Function to get cookie by name
+        // Enhanced cookie getter that logs issues
         function getCookie(name) {
+            if (!name) {
+                console.error('No cookie name provided');
+                return null;
+            }
+
             const value = `; ${document.cookie}`;
             const parts = value.split(`; ${name}=`);
-            if (parts.length === 2) return parts.pop().split(';').shift();
+
+            if (parts.length === 2) {
+                const token = parts.pop().split(';').shift();
+                console.log(`Found cookie "${name}":`, token ? 'exists' : 'empty');
+                return token;
+            }
+
+            console.log(`Cookie "${name}" not found`);
+            console.log('All cookies:', document.cookie);
+            return null;
         }
 
         const tg = window.Telegram.WebApp;
-        tg.expand(); // Expand the web app to full view
-        tg.enableClosingConfirmation(); // Optional: confirm before closing
+        tg.expand();
+        tg.enableClosingConfirmation();
 
-        // Get the cookie name from the template variable
+        // Debug cookie name from template
         const cookieName = "{{ cookie_name }}";
+        console.log('Looking for cookie named:', cookieName);
+
         let authToken = cookieName ? getCookie(cookieName) : null;
         const authStatusElement = document.getElementById('authStatus');
 
         async function sendAuthRequest() {
-            // If we already have a token from cookie, skip auth request
+            // Double-check cookie right before auth check
+            authToken = cookieName ? getCookie(cookieName) : null;
+
             if (authToken) {
+                console.log('Using existing auth token from cookie');
                 authStatusElement.textContent = "Authenticated from cookie";
                 authStatusElement.className = "auth-status auth-success";
                 authStatusElement.style.display = "block";
-
-                // Initialize the app after successful auth
                 init();
                 return;
             }
 
+            console.log('No auth token found, proceeding with auth request');
             authStatusElement.textContent = "Authenticating...";
             authStatusElement.className = "auth-status";
             authStatusElement.style.display = "block";
@@ -191,27 +209,31 @@
                     body: tg.initData
                 });
 
-                const result = await response.json();
-
-                if (response.ok) {
-                    authToken = result.token || result.access_token; // Adjust based on your backend response
-                    authStatusElement.textContent = "Authenticated successfully!";
-                    authStatusElement.className = "auth-status auth-success";
-
-                    // Initialize the app after successful auth
-                    init();
-                } else {
-                    throw new Error(result.detail || "Authentication failed");
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
+
+                const result = await response.json();
+                authToken = result.token || result.access_token;
+
+                if (!authToken) {
+                    throw new Error("No token received in auth response");
+                }
+
+                authStatusElement.textContent = "Authenticated successfully!";
+                authStatusElement.className = "auth-status auth-success";
+                init();
             } catch (error) {
+                console.error('Auth error:', error);
                 authStatusElement.textContent = "Error: " + error.message;
                 authStatusElement.className = "auth-status auth-error";
-                console.error('Authentication error:', error);
             }
         }
 
-        // Run auth immediately when page loads
-        document.addEventListener('DOMContentLoaded', sendAuthRequest);
+        // Add slight delay to ensure cookies are available
+        setTimeout(() => {
+            document.addEventListener('DOMContentLoaded', sendAuthRequest);
+        }, 50);
     </script>
     <div class="header">
         <h1>Tracking Sessions</h1>
