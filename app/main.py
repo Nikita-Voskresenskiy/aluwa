@@ -38,7 +38,7 @@ app.mount('/auth', auth_router)
 @app.middleware('http')
 async def middleware(request: Request, call_next):
     # Bypass auth for auth routes, static files, and docs
-    if request.url.path.startswith(('/auth/', '/docs', '/favicon.ico')):
+    if request.url.path.startswith(('/auth/', '/webapp', '/docs', '/favicon.ico')):
         return await call_next(request)
 
     # Handle WebApp flow
