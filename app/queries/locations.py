@@ -155,76 +155,103 @@ async def calculate_session_statistics(
         track_session_id: int,
         user_id: int,
 ) -> dict:
-    """Calculate and return session statistics (distance, max speed, avg speed) excluding paused points"""
+    """Calculate and return session statistics including:
+    - distance_m_total (excluding paused points)
+    - speed_mps_max (excluding paused points)
+    - speed_mps_average (excluding paused points)
+    - duration_s_active (excluding paused points)
+    - duration_s_total (including all points)
+    """
     if not await can_access_session(session, user_id, track_session_id):
         raise SessionAccessError("User has no access to this track session")
 
     # First ensure all speeds are calculated
     await calculate_speeds_for_session(session, track_session_id, user_id)
 
-    # Get all non-paused locations for the session ordered by timestamp
-    locations = await session.execute(
+    # Get ALL locations for total duration calculation
+    all_locations = await session.execute(
+        select(Location)
+        .where(Location.session_id == track_session_id)
+        .order_by(Location.custom_timestamp.asc())
+    )
+    all_locations = all_locations.scalars().all()
+
+    # Get only active locations for other calculations
+    active_locations = await session.execute(
         select(Location)
         .where(Location.session_id == track_session_id)
         .where(Location.is_paused == False)
         .order_by(Location.custom_timestamp.asc())
     )
-    locations = locations.scalars().all()
+    active_locations = active_locations.scalars().all()
 
-    if len(locations) < 2:
-        # Not enough points to calculate meaningful statistics
-        return {
-            'distance_m_total': 0.0,
-            'speed_mps_max': 0.0,
-            'speed_mps_average': 0.0
-        }
+    # Initialize statistics
+    stats = {
+        'distance_m_total': 0.0,
+        'speed_mps_max': 0.0,
+        'speed_mps_average': 0.0,
+        'duration_s_active': 0.0,
+        'duration_s_total': 0.0
+    }
 
-    total_distance = 0.0
-    speed_sum = 0.0
-    max_speed = 0.0
-    valid_speeds_count = 0
+    # Calculate total duration (all points)
+    if len(all_locations) > 1:
+        first_point = all_locations[0]
+        last_point = all_locations[-1]
+        stats['duration_s_total'] = (last_point.custom_timestamp - first_point.custom_timestamp).total_seconds()
 
-    # Calculate distances and speeds between consecutive points
-    for i in range(1, len(locations)):
-        prev_loc = locations[i - 1]
-        current_loc = locations[i]
+    # Calculate active statistics (non-paused points only)
+    if len(active_locations) > 1:
+        # Calculate active duration
+        first_active = active_locations[0]
+        last_active = active_locations[-1]
+        stats['duration_s_active'] = (last_active.custom_timestamp - first_active.custom_timestamp).total_seconds()
 
-        # Calculate distance using PostGIS function
-        distance_result = await session.execute(
-            select(
-                func.ST_DistanceSphere(
-                    prev_loc.geom,
-                    current_loc.geom
+        # Calculate distance and speeds
+        total_distance = 0.0
+        speed_sum = 0.0
+        max_speed = 0.0
+        valid_speeds_count = 0
+
+        for i in range(1, len(active_locations)):
+            prev_loc = active_locations[i - 1]
+            current_loc = active_locations[i]
+
+            # Calculate distance between points
+            distance_result = await session.execute(
+                select(
+                    func.ST_DistanceSphere(
+                        prev_loc.geom,
+                        current_loc.geom
+                    )
                 )
             )
-        )
-        segment_distance = distance_result.scalar_one()
-        total_distance += segment_distance
+            segment_distance = distance_result.scalar_one()
+            total_distance += segment_distance
 
-        # Use the current point's speed (already calculated)
-        if current_loc.speed_mps is not None:
-            speed_sum += current_loc.speed_mps
-            if current_loc.speed_mps > max_speed:
-                max_speed = current_loc.speed_mps
-            valid_speeds_count += 1
+            # Use the current point's speed
+            if current_loc.speed_mps is not None:
+                speed_sum += current_loc.speed_mps
+                if current_loc.speed_mps > max_speed:
+                    max_speed = current_loc.speed_mps
+                valid_speeds_count += 1
 
-    # Calculate average speed (avoid division by zero)
-    avg_speed = speed_sum / valid_speeds_count if valid_speeds_count > 0 else 0.0
+        stats['distance_m_total'] = total_distance
+        stats['speed_mps_max'] = max_speed
+        stats['speed_mps_average'] = speed_sum / valid_speeds_count if valid_speeds_count > 0 else 0.0
 
     # Update the TrackSession record with these statistics
     await session.execute(
         update(TrackSession)
         .where(TrackSession.session_id == track_session_id)
         .values(
-            distance_m_total=total_distance,
-            speed_mps_max=max_speed,
-            speed_mps_average=avg_speed
+            distance_m_total=stats['distance_m_total'],
+            speed_mps_max=stats['speed_mps_max'],
+            speed_mps_average=stats['speed_mps_average'],
+            duration_s_active=stats['duration_s_active'],
+            duration_s_total=stats['duration_s_total']
         )
     )
     await session.commit()
 
-    return {
-        'distance_m_total': total_distance,
-        'speed_mps_max': max_speed,
-        'speed_mps_average': avg_speed
-    }
+    return stats

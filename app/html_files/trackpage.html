@@ -57,7 +57,7 @@
             margin-bottom: 5px;
         }
 
-        .card-date {
+        .card-id {
             color: #666;
             font-size: 14px;
             margin-bottom: 8px;
@@ -226,7 +226,7 @@
 </head>
 <body>
     <div id="app">
-        <h1>Welcome to the WebApp</h1>
+        <!--<h1>Welcome to the WebApp</h1>-->
         <div id="authStatus" class="auth-status"></div>
     </div>
 
@@ -274,10 +274,11 @@
         // Run auth immediately when page loads
         document.addEventListener('DOMContentLoaded', sendAuthRequest);
     </script>
+    <!--
     <div class="header">
         <h1>Tracking Sessions</h1>
     </div>
-
+    -->
     <div class="cards-container" id="cardsContainer">
         <!-- Cards will be dynamically inserted here -->
     </div>
@@ -385,6 +386,7 @@
                     name: `Session ${session.session_id}`,
                     date: session.start_timestamp,
                     distance: session.distance_m_total,
+                    duration_s_active: session.duration_s_active,
                     avgSpeed: session.speed_mps_average,
                     maxSpeed: session.speed_mps_max,
                     coordinates: []
@@ -468,8 +470,10 @@
 
                 cardElement.innerHTML = `
                     <div class="card-name">${formatDate(card.date)}</div>
+                    <div class="card-id"># ${card.id}</div>
                     <div class="card-stats">
                         ${card.distance !== null ? `<div class="stat-item">Distance: ${formatDistance(card.distance)}</div>` : ''}
+                        ${card.duration_s_active !== null ? `<div class="stat-item">Duration: ${formatDuration(card.duration_s_active)}</div>` : ''}
                         ${card.avgSpeed !== null ? `<div class="stat-item">Avg Speed: ${formatSpeed(card.avgSpeed)}</div>` : ''}
                         ${card.maxSpeed !== null ? `<div class="stat-item">Max Speed: ${formatSpeed(card.maxSpeed)}</div>` : ''}
                     </div>
@@ -478,7 +482,6 @@
                 cardsContainer.appendChild(cardElement);
             });
         }
-
         // Format date for display
         function formatDate(dateString) {
             const date = new Date(dateString);
@@ -506,6 +509,22 @@
             const kph = mps * 3.6;
             return `${kph.toFixed(1)} km/h`;
         }
+        
+        // Format duration for display
+        function formatDuration(seconds) {
+            if (!seconds) return '0s';
+            
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = Math.floor(seconds % 60);
+            
+            let parts = [];
+            if (hours > 0) parts.push(`${hours}h`);
+            if (minutes > 0) parts.push(`${minutes}m`);
+            if (secs > 0 || parts.length === 0) parts.push(`${secs}s`);
+            
+            return parts.join(' ');
+        }
 
         // Set up event listeners
         function setupEventListeners() {
@@ -528,6 +547,7 @@
                         // Store current session stats
                         currentSessionStats = {
                             distance: session.distance,
+                            duration_s_active: session.duration_s_active,
                             avgSpeed: session.avgSpeed,
                             maxSpeed: session.maxSpeed,
                             speedData: coordinates.filter(coord => !coord.isPause).map(coord => ({
@@ -583,6 +603,14 @@
                     <div class="stat-value">${
                         currentSessionStats.distance !== null
                             ? formatDistance(currentSessionStats.distance)
+                            : 'N/A'
+                    }</div>
+                </div>
+                <div class="stat-box">
+                    <div>Active Duration</div>
+                    <div class="stat-value">${
+                        currentSessionStats.duration_s_active !== null
+                            ? formatDuration(currentSessionStats.duration_s_active)
                             : 'N/A'
                     }</div>
                 </div>

@@ -175,7 +175,9 @@ async def get_user_tarck_sessions(
               "start_timestamp": s.start_timestamp.isoformat(),
               "distance_m_total": s.distance_m_total,
               "speed_mps_average": s.speed_mps_average,
-              "speed_mps_max": s.speed_mps_max
+              "speed_mps_max": s.speed_mps_max,
+              "duration_s_active": s.duration_s_active,
+              "duration_s_total": s.duration_s_total
               } for s in user_sessions]
     except Exception as e:
         return {"error": True, "message": e}

@@ -27,3 +27,5 @@ class TrackSession(Base):
     distance_m_total = Column(Float)
     speed_mps_max = Column(Float)
     speed_mps_average = Column(Float)
+    duration_s_active = Column(Float)
+    duration_s_total = Column(Float)
