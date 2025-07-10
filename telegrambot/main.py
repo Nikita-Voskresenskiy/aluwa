@@ -3,22 +3,15 @@ import os
 import time
 import asyncio
 from datetime import datetime
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram import F
 from aiogram.client.default import DefaultBotProperties
 
-from aiogram.types import (
-    Message,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardRemove
-)
+from aiogram.types import Message, ReplyKeyboardRemove, MenuButtonWebApp, WebAppInfo
+
 from aiogram.filters import Command
-from aiogram.utils.keyboard import ReplyKeyboardBuilder
-from requests import send_authenticated_post_request, send_location, start_session, stop_session, get_token
+from requests import send_location, start_session, stop_session, get_token
 from auth import encode_token
 from joserfc import jwt
 
@@ -193,6 +186,13 @@ async def handle_location_update(message: Message):
         session.update_location(location, update_timestamp)
 
 async def on_startup(dispatcher):
+    if env.PROTOCOL == "https":
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="Open App",
+                web_app=WebAppInfo(url="{}://{}/webapp".format(env.PROTOCOL, env.DOMAIN_NAME))
+            )
+        )
     print("Bot started")
 
 
