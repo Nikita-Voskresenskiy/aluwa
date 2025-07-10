@@ -9,7 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: sans-serif; padding: 20px; }
-        button { padding: 10px 15px; background: #0088cc; color: white; border: none; border-radius: 5px; }
+        button { padding: 10px 15px; background: #8d121b; color: white; border: none; border-radius: 5px; }
     </style>
     <style>
         * {
@@ -28,7 +28,7 @@
             text-align: center;
             margin-bottom: 15px;
             padding: 10px;
-            background-color: #4a6fa5;
+            background-color: #8d121b;
             color: white;
             border-radius: 5px;
         }
@@ -179,7 +179,7 @@
         }
 
         .tab-button.active {
-            background: #4a6fa5;
+            background: #8d121b;
             color: white;
         }
 
@@ -666,8 +666,8 @@
                     datasets: [{
                         label: 'Speed (km/h)',
                         data: data,
-                        borderColor: '#4a6fa5',
-                        backgroundColor: 'rgba(74, 111, 165, 0.1)',
+                        borderColor: '#8d121b',
+                        backgroundColor: 'rgba(141, 18, 27, 0.1)',
                         borderWidth: 2,
                         tension: 0.1,
                         fill: true
@@ -759,12 +759,12 @@
             // Add new markers (using circle markers for better performance)
             coordinates.forEach(coord => {
                 const marker = L.circleMarker([coord.lat, coord.lng], {
-                    radius: 8,
-                    fillColor: "#3388ff",
+                    radius: 4,
+                    fillColor: "#8d121b",
                     color: "#000",
                     weight: 1,
                     opacity: 1,
-                    fillOpacity: 0.8
+                    fillOpacity: 0.5
                 }).addTo(map);
                 markers.push(marker);
             });
@@ -772,7 +772,7 @@
             // If multiple coordinates, draw a polyline
             if (coordinates.length > 1) {
                 const latLngs = coordinates.map(coord => [coord.lat, coord.lng]);
-                const polyline = L.polyline(latLngs, {color: '#3388ff'}).addTo(map);
+                const polyline = L.polyline(latLngs, {color: '#8d121b'}).addTo(map);
                 markers.push(polyline);
                 map.fitBounds(polyline.getBounds(), { padding: [50, 50] });
             }
