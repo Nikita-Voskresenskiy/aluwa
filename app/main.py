@@ -17,8 +17,8 @@ from auth import auth_router, verify_init_data_is_correct, encode_token, process
 
 from fastapi import Depends
 from database import get_db
-from schemas import RecordLocation, CreateTrackSession
-from queries.locations import get_sessions_by_telegram_id, get_coordinates_by_session_id, record_location, start_session
+from schemas import RecordLocation, CreateTrackSession, StopTrackSession
+from queries.locations import get_sessions_by_user_id, get_coordinates_by_session_id, record_location, start_session, calculate_speeds_for_session, calculate_session_statistics
 from queries.db_user_access import get_user_id_by_telegram_id
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,7 +86,7 @@ async def webapp_auth(request: Request,
 
         init_data = dict(urllib.parse.parse_qsl(body_str))
         logger.info(f"Parsed initData: {init_data}")
-
+        #'''
         if not init_data.get('hash'):
             logger.warning("Missing hash in initData")
             raise HTTPException(status_code=400, detail="Missing authentication hash")
@@ -115,7 +115,7 @@ async def webapp_auth(request: Request,
         except (json.JSONDecodeError, ValueError) as e:
             logger.error(f"User data parsing failed: {str(e)}")
             raise HTTPException(status_code=400, detail="Invalid user data in initData")
-
+        #'''
         user_id = await get_user_id_by_telegram_id(session=db, telegram_id=telegram_id)
         # Token generation
         token = encode_token({'user_id': user_id})
@@ -124,7 +124,7 @@ async def webapp_auth(request: Request,
         response_data = {
             "status": "authenticated",
             "token": token,
-            "user_id": telegram_id
+            "user_id": user_id
         }
 
         logger.info("Authentication successful")
@@ -163,16 +163,19 @@ async def start_new_track_session(
 
 
 @app.get("/track/sessions")
-async def start_new_track_session(
+async def get_user_tarck_sessions(
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     try:
         user_id = request.state.user_id
         """Endpoint to create a new location record"""
-        user_sessions = await get_sessions_by_telegram_id(session=db, user_id = user_id)
+        user_sessions = await get_sessions_by_user_id(session=db, user_id=user_id)
         r = [{"session_id": s.session_id,
               "start_timestamp": s.start_timestamp.isoformat(),
+              "distance_m_total": s.distance_m_total,
+              "speed_mps_average": s.speed_mps_average,
+              "speed_mps_max": s.speed_mps_max
               } for s in user_sessions]
     except Exception as e:
         return {"error": True, "message": e}
@@ -193,7 +196,8 @@ async def start_new_track_session(
             "lon": c[0],
             "lat": c[1],
             "t": c[2].isoformat(),
-            "p": c[3]
+            "p": c[3],
+            "s": c[4]
         }
         for c in coordinates]
 
@@ -201,6 +205,23 @@ async def start_new_track_session(
         return {"error": True, "message": e}
 
     return {"error": False, "result": json.dumps(processed_coordinates)}
+
+@app.post("/track/sessions/stop_session")
+async def stop_track_session(
+    data: StopTrackSession,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        user_id = request.state.user_id
+        await calculate_speeds_for_session(session=db, track_session_id=data.track_session_id, user_id=user_id)
+        statistics = await calculate_session_statistics(session=db, track_session_id=data.track_session_id, user_id=user_id)
+
+
+    except Exception as e:
+        return {"error": True, "message": e}
+
+    return {"error": False, "result": statistics}
 
 if __name__ == '__main__':
     uvicorn.run('main:app', host='0.0.0.0', port=8000)

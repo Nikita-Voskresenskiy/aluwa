@@ -11,7 +11,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.types import Message, ReplyKeyboardRemove, MenuButtonWebApp, WebAppInfo
 
 from aiogram.filters import Command
-from requests import send_location, start_session, stop_session, get_token
+from requests import send_location, start_track_session, stop_track_session, get_token
 from auth import encode_token
 from joserfc import jwt
 
@@ -63,7 +63,7 @@ class TrackSession:
             "start_timestamp": datetime.fromtimestamp(self.timestamp).isoformat(),
             "live_period": self.live_period
         }
-        result = await start_session(payload, encode_token({'user_id': self.user_id}))
+        result = await start_track_session(payload, encode_token({'user_id': self.user_id}))
         self.session_id = result.get("session_id", -1)
 
     async def record_location(self):
@@ -90,6 +90,7 @@ class TrackSession:
     async def stop_session(self):
         """Stop the recording session"""
         self.is_active = False
+        result = await stop_track_session({"track_session_id": self.session_id}, encode_token({'user_id': self.user_id}))
         if self.task:
             self.task.cancel()
             try:

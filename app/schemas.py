@@ -11,3 +11,6 @@ class RecordLocation(BaseModel):
 class CreateTrackSession(BaseModel):
     live_period: int
     start_timestamp: datetime
+
+class StopTrackSession(BaseModel):
+    track_session_id: int

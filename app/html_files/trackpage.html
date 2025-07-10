@@ -6,6 +6,7 @@
     <title>Track Sessions</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: sans-serif; padding: 20px; }
         button { padding: 10px 15px; background: #0088cc; color: white; border: none; border-radius: 5px; }
@@ -59,6 +60,21 @@
         .card-date {
             color: #666;
             font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .card-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .stat-item {
+            background-color: #f0f0f0;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 13px;
         }
 
         .map-container {
@@ -79,18 +95,18 @@
 
         .close-map {
             position: absolute;
-            top: 15px;  /* Increased from 10px */
-            right: 15px; /* Increased from 10px */
+            top: 15px;
+            right: 15px;
             z-index: 1001;
-            background: rgba(255,255,255,0.9); /* More opaque white */
-            border: 2px solid #333; /* Added border */
+            background: rgba(255,255,255,0.9);
+            border: 1px solid #b3b3b3;
             border-radius: 50%;
             width: 40px;
             height: 40px;
-            font-size: 24px; /* Increased from 20px */
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3); /* Stronger shadow */
+            font-size: 24px;
+            box-shadow: 0 2px 10px rgba(125, 125, 125, 0.3);
             cursor: pointer;
-            color: #333; /* Dark color for the X */
+            color: #b3b3b3;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -141,6 +157,71 @@
             background-color: #f8d7da;
             color: #721c24;
         }
+
+        .tab-container {
+            position: absolute;
+            top: 60px;
+            left: 0;
+            right: 0;
+            z-index: 1001;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .tab-button {
+            padding: 8px 16px;
+            background: #f0f0f0;
+            color: #696969;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .tab-button.active {
+            background: #4a6fa5;
+            color: white;
+        }
+
+        .stats-container {
+            display: none;
+            position: absolute;
+            top: 100px;
+            left: 20px;
+            right: 20px;
+            bottom: 20px;
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            overflow-y: auto;
+            z-index: 1001;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .stat-box {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            font-size: 18px;
+            margin-top: 5px;
+        }
+
+        .chart-container {
+            width: 100%;
+            height: 300px;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
@@ -174,7 +255,7 @@
                 const result = await response.json();
 
                 if (response.ok) {
-                    authToken = result.token || result.access_token; // Adjust based on your backend response
+                    authToken = result.token || result.access_token;
                     authStatusElement.textContent = "Authenticated successfully!";
                     authStatusElement.className = "auth-status auth-success";
 
@@ -203,7 +284,19 @@
 
     <div class="map-container" id="mapContainer">
         <button class="close-map" id="closeMap">×</button>
+        <div class="tab-container" id="tabContainer">
+            <button class="tab-button active" data-tab="map">Map</button>
+            <button class="tab-button" data-tab="stats">Statistics</button>
+        </div>
         <div id="map"></div>
+        <div class="stats-container" id="statsContainer">
+            <div class="stats-grid" id="statsGrid">
+                <!-- Stats will be inserted here -->
+            </div>
+            <div class="chart-container">
+                <canvas id="speedChart"></canvas>
+            </div>
+        </div>
         <div class="map-loading" id="mapLoading">Loading map...</div>
     </div>
 
@@ -219,10 +312,16 @@
         const closeMapBtn = document.getElementById('closeMap');
         const loadingIndicator = document.getElementById('loadingIndicator');
         const mapLoading = document.getElementById('mapLoading');
+        const tabContainer = document.getElementById('tabContainer');
+        const statsContainer = document.getElementById('statsContainer');
+        const statsGrid = document.getElementById('statsGrid');
+        const speedChartCanvas = document.getElementById('speedChart');
         let map;
         let tileLayer;
         let markers = [];
         let cardsData = [];
+        let speedChart = null;
+        let currentSessionStats = null;
 
         // Initialize the page
         async function init() {
@@ -233,7 +332,6 @@
                 setupEventListeners();
             } catch (error) {
                 console.error('Error initializing:', error);
-                // Error already shown by fetch functions
             } finally {
                 hideLoading();
             }
@@ -251,21 +349,21 @@
                         'Authorization': `Bearer ${authToken}`
                     }
                 });
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                
+
                 const data = await response.json();
-                
+
                 // Debugging: log the response
                 console.log('API Response:', data);
-                
+
                 // Check for error in response
                 if (data.error) {
                     throw new Error(data.message || 'Server returned an error');
                 }
-                
+
                 // Handle case where result is a JSON string
                 let resultData = data.result;
                 if (typeof resultData === 'string') {
@@ -275,20 +373,23 @@
                         throw new Error('Failed to parse JSON string in result field');
                     }
                 }
-                
+
                 // Verify result exists and is an array
                 if (!resultData || !Array.isArray(resultData)) {
                     throw new Error('Invalid data format: expected array in result field');
                 }
-                
+
                 // Process the sessions data
                 return resultData.map(session => ({
                     id: session.session_id,
                     name: `Session ${session.session_id}`,
                     date: session.start_timestamp,
+                    distance: session.distance_m_total,
+                    avgSpeed: session.speed_mps_average,
+                    maxSpeed: session.speed_mps_max,
                     coordinates: []
                 })).sort((a, b) => new Date(b.date) - new Date(a.date));
-                
+
             } catch (error) {
                 console.error('Error fetching sessions:', error);
                 alert('Error loading sessions: ' + error.message);
@@ -308,18 +409,18 @@
                         'Authorization': `Bearer ${authToken}`
                     }
                 });
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                
+
                 const data = await response.json();
-                
+
                 // Check for error in response
                 if (data.error) {
                     throw new Error(data.message || 'Server returned an error');
                 }
-                
+
                 // Handle case where result is a JSON string
                 let resultData = data.result;
                 if (typeof resultData === 'string') {
@@ -329,27 +430,27 @@
                         throw new Error('Failed to parse JSON string in result field');
                     }
                 }
-                
+
                 // Verify result exists and is an array
                 if (!resultData || !Array.isArray(resultData)) {
                     throw new Error('Invalid data format: expected array in result field');
                 }
-                
+
                 // Transform coordinates to the format expected by the map
                 return resultData.map(point => ({
                     lat: point.lat,
-                    lng: point.lon,  // Note: converting 'lon' to 'lng' for Leaflet compatibility
+                    lng: point.lon,
                     timestamp: point.t,
-                    isPause: point.p
+                    isPause: point.p,
+                    speed: point.s
                 }));
-                
+
             } catch (error) {
                 console.error('Error fetching coordinates:', error);
                 alert('Error loading coordinates: ' + error.message);
                 throw error;
             }
         }
-        
 
         // Render all cards
         function renderCards() {
@@ -366,8 +467,12 @@
                 cardElement.dataset.id = card.id;
 
                 cardElement.innerHTML = `
-                    <div class="card-name">${card.name}</div>
-                    <div class="card-date">${formatDate(card.date)}</div>
+                    <div class="card-name">${formatDate(card.date)}</div>
+                    <div class="card-stats">
+                        ${card.distance !== null ? `<div class="stat-item">Distance: ${formatDistance(card.distance)}</div>` : ''}
+                        ${card.avgSpeed !== null ? `<div class="stat-item">Avg Speed: ${formatSpeed(card.avgSpeed)}</div>` : ''}
+                        ${card.maxSpeed !== null ? `<div class="stat-item">Max Speed: ${formatSpeed(card.maxSpeed)}</div>` : ''}
+                    </div>
                 `;
 
                 cardsContainer.appendChild(cardElement);
@@ -385,6 +490,21 @@
                 minute: '2-digit'
             };
             return date.toLocaleDateString(undefined, options);
+        }
+
+        // Format distance for display
+        function formatDistance(meters) {
+            if (meters < 1000) {
+                return `${meters.toFixed(1)} m`;
+            } else {
+                return `${(meters / 1000).toFixed(2)} km`;
+            }
+        }
+
+        // Format speed for display
+        function formatSpeed(mps) {
+            const kph = mps * 3.6;
+            return `${kph.toFixed(1)} km/h`;
         }
 
         // Set up event listeners
@@ -405,6 +525,17 @@
                             ? session.coordinates
                             : await fetchCoordinates(cardId);
 
+                        // Store current session stats
+                        currentSessionStats = {
+                            distance: session.distance,
+                            avgSpeed: session.avgSpeed,
+                            maxSpeed: session.maxSpeed,
+                            speedData: coordinates.filter(coord => !coord.isPause).map(coord => ({
+                                time: new Date(coord.timestamp),
+                                speed: coord.speed * 3.6 // Convert to km/h
+                            }))
+                        };
+
                         showMap(coordinates);
                     } catch (error) {
                         console.error('Error:', error);
@@ -417,6 +548,123 @@
 
             // Close map button
             closeMapBtn.addEventListener('click', hideMap);
+
+            // Tab buttons
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.addEventListener('click', function() {
+                    const tab = this.dataset.tab;
+
+                    // Update active tab
+                    document.querySelectorAll('.tab-button').forEach(btn => {
+                        btn.classList.toggle('active', btn === this);
+                    });
+
+                    // Show/hide content
+                    if (tab === 'map') {
+                        document.getElementById('map').style.display = 'block';
+                        statsContainer.style.display = 'none';
+                    } else if (tab === 'stats') {
+                        document.getElementById('map').style.display = 'none';
+                        statsContainer.style.display = 'block';
+                        renderStats();
+                    }
+                });
+            });
+        }
+
+        // Render statistics
+        function renderStats() {
+            if (!currentSessionStats) return;
+
+            // Update stats grid
+            statsGrid.innerHTML = `
+                <div class="stat-box">
+                    <div>Total Distance</div>
+                    <div class="stat-value">${
+                        currentSessionStats.distance !== null
+                            ? formatDistance(currentSessionStats.distance)
+                            : 'N/A'
+                    }</div>
+                </div>
+                <div class="stat-box">
+                    <div>Average Speed</div>
+                    <div class="stat-value">${
+                        currentSessionStats.avgSpeed !== null
+                            ? formatSpeed(currentSessionStats.avgSpeed)
+                            : 'N/A'
+                    }</div>
+                </div>
+                <div class="stat-box">
+                    <div>Maximum Speed</div>
+                    <div class="stat-value">${
+                        currentSessionStats.maxSpeed !== null
+                            ? formatSpeed(currentSessionStats.maxSpeed)
+                            : 'N/A'
+                    }</div>
+                </div>
+            `;
+
+            // Render speed chart
+            renderSpeedChart();
+        }
+
+        // Render speed chart
+        function renderSpeedChart() {
+            if (!currentSessionStats || !currentSessionStats.speedData || currentSessionStats.speedData.length === 0) {
+                if (speedChart) {
+                    speedChart.destroy();
+                    speedChart = null;
+                }
+                return;
+            }
+
+            const ctx = speedChartCanvas.getContext('2d');
+
+            // Destroy previous chart if exists
+            if (speedChart) {
+                speedChart.destroy();
+            }
+
+            // Prepare data for chart
+            const labels = currentSessionStats.speedData.map(data =>
+                data.time.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})
+            );
+            const data = currentSessionStats.speedData.map(data => data.speed);
+
+            speedChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Speed (km/h)',
+                        data: data,
+                        borderColor: '#4a6fa5',
+                        backgroundColor: 'rgba(74, 111, 165, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.1,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Speed (km/h)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         // Show loading indicator
@@ -506,6 +754,12 @@
         function hideMap() {
             mapContainer.style.display = 'none';
             document.body.style.overflow = 'auto';
+
+            // Reset tabs to map view
+            document.querySelector('.tab-button[data-tab="map"]').classList.add('active');
+            document.querySelector('.tab-button[data-tab="stats"]').classList.remove('active');
+            document.getElementById('map').style.display = 'block';
+            statsContainer.style.display = 'none';
         }
     </script>
 </body>

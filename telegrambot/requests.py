@@ -86,7 +86,7 @@ async def send_location(payload: Dict, JWT_TOKEN: str):
     except Exception as e:
         print(f"⚠️ Request failed: {str(e)}")
 
-async def start_session(payload: Dict, JWT_TOKEN: str):
+async def start_track_session(payload: Dict, JWT_TOKEN: str):
 
     headers = {
         "Authorization": f"Bearer {JWT_TOKEN}",
@@ -111,7 +111,7 @@ async def start_session(payload: Dict, JWT_TOKEN: str):
     except Exception as e:
         print(f"⚠️ Request failed: {str(e)}")
 
-async def stop_session(payload: Dict, JWT_TOKEN: str):
+async def stop_track_session(payload: Dict, JWT_TOKEN: str):
 
     headers = {
         "Authorization": f"Bearer {JWT_TOKEN}",
@@ -121,9 +121,9 @@ async def stop_session(payload: Dict, JWT_TOKEN: str):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                    "{}://{}/track/stop_session".format(env.PROTOCOL, env.DOMAIN_NAME),
-                    json=payload,
-                    headers=headers
+                    "{}://{}/track/sessions/stop_session".format(env.PROTOCOL, env.DOMAIN_NAME),
+                    headers=headers,
+                    json=payload
             ) as response:
                 if response.status == 200:
                     data = await response.json()
