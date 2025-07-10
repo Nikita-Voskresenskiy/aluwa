@@ -1,8 +1,10 @@
 import aiohttp
 from typing import Dict, Any
 
-from env_settings import EnvSettings
-env = EnvSettings()
+from urllib.parse import urlencode
+
+from auth import encode_query_data
+from env_settings import env
 
 
 async def send_authenticated_post_request(payload: Dict, JWT_TOKEN: str):
@@ -26,6 +28,32 @@ async def send_authenticated_post_request(payload: Dict, JWT_TOKEN: str):
                 if response.status == 200:
                     data = await response.json()
                     print('Response:', data)
+                else:
+                    error = await response.text()
+                    print(error)
+
+    except Exception as e:
+        print(f"⚠️ Request failed: {str(e)}")
+
+async def get_token(payload):
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    encoded = encode_query_data(payload)
+    query_string = urlencode(encoded)
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                    "{}://{}/auth/token".format(env.PROTOCOL, env.DOMAIN_NAME),
+                    params=query_string,
+                    headers=headers
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    print('Response:', data)
+                    return data
                 else:
                     error = await response.text()
                     print(error)

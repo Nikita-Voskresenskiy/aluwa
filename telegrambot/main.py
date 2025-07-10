@@ -18,11 +18,11 @@ from aiogram.types import (
 )
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
-from requests import send_authenticated_post_request, send_location, start_session, stop_session
+from requests import send_authenticated_post_request, send_location, start_session, stop_session, get_token
 from auth import encode_token
+from joserfc import jwt
 
-from env_settings import EnvSettings
-env = EnvSettings()
+from env_settings import env
 
 
 
@@ -40,10 +40,10 @@ dp = Dispatcher()
 active_sessions = {}
 
 
-
 class TrackSession:
-    def __init__(self, user_id, start_timestamp, location):
-        self.user_id = user_id
+    def __init__(self, telegram_id, start_timestamp, location):
+        self.user_id = -1
+        self.telegram_id = telegram_id
         self.start_timestamp = start_timestamp
         self.session_id = -1
         self.live_period = location.live_period
@@ -58,12 +58,19 @@ class TrackSession:
 
         self.update_location(location, start_timestamp)
 
+    async def set_user_id(self):
+        try:
+            result = await get_token({'telegram_id': self.telegram_id})
+            self.user_id = jwt.decode(result["token"], env.JWT_SECRET_KEY).claims["user_id"]
+        except Exception as e:
+            print(e)
+
     async def set_session_id(self):
         payload = {
             "start_timestamp": datetime.fromtimestamp(self.timestamp).isoformat(),
             "live_period": self.live_period
         }
-        result = await start_session(payload, encode_token({'telegram_id': self.user_id}))
+        result = await start_session(payload, encode_token({'user_id': self.user_id}))
         self.session_id = result.get("session_id", -1)
 
     async def record_location(self):
@@ -78,7 +85,7 @@ class TrackSession:
                     "is_paused": self.is_paused
                 }
                 #print(payload)
-                await send_location(payload, encode_token({'telegram_id': self.user_id}))
+                await send_location(payload, encode_token({'user_id': self.user_id}))
                 await asyncio.sleep(10)
 
     def update_location(self, location, timestamp):
@@ -153,21 +160,22 @@ async def continue_session(message: Message):
 @dp.message(F.location.live_period)
 async def handle_live_location(message: Message):
     update_timestamp = time.time()
-    user_id = message.from_user.id
+    telegram_id = message.from_user.id
     location = message.location
 
     # Check if user already has an active session
-    if user_id in active_sessions:
-        session = active_sessions[user_id]
+    if telegram_id in active_sessions:
+        session = active_sessions[telegram_id]
         if session.is_active:
             await message.answer("You already have an active session. \n /pause_session to pause \n\n /stop_session to stop.")
             return
 
     # Create new session
-    session = TrackSession(user_id, update_timestamp, location)
+    session = TrackSession(telegram_id, update_timestamp, location)
+    await session.set_user_id()
     await session.set_session_id()
     session.task = asyncio.create_task(session.record_location())
-    active_sessions[user_id] = session
+    active_sessions[telegram_id] = session
 
     await message.answer(
         f"New tracking session started! \n /pause_session to pause \n\n /stop_session to stop.")

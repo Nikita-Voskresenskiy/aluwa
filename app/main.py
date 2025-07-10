@@ -5,7 +5,7 @@ from app_logger import logger
 
 import json
 import urllib.parse
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.requests import Request
@@ -15,10 +15,11 @@ from fastapi.templating import Jinja2Templates
 from auth import auth_router, verify_init_data_is_correct, encode_token, process_token
 
 
-from fastapi import APIRouter, Depends
+from fastapi import Depends
 from database import get_db
 from schemas import RecordLocation, CreateTrackSession
 from queries.locations import get_sessions_by_telegram_id, get_coordinates_by_session_id, record_location, start_session
+from queries.db_user_access import get_user_id_by_telegram_id
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -38,7 +39,7 @@ app.mount('/auth', auth_router)
 @app.middleware('http')
 async def middleware(request: Request, call_next):
     # Bypass auth for auth routes, static files, and docs
-    if request.url.path.startswith(('/auth/', '/webapp', '/docs', '/favicon.ico')):
+    if request.url.path.startswith(('/auth', '/webapp', '/docs', '/favicon.ico')):
         return await call_next(request)
 
     # Handle WebApp flow
@@ -50,7 +51,7 @@ async def middleware(request: Request, call_next):
     try:
         token_parts = process_token(request)
         if token_parts:
-            request.state.telegram_id = token_parts.claims['telegram_id']
+            request.state.user_id = token_parts.claims['user_id']
             return await call_next(request)
     except Exception as e:
         logger.error(f"Error processing token: {str(e)}", exc_info=True)
@@ -73,7 +74,9 @@ async def webapp_interface(request: Request):
     return templates.TemplateResponse("trackpage.html", {"request": request, "title": "Telegram WebApp"})
 
 @app.post("/webapp-auth")
-async def webapp_auth(request: Request):
+async def webapp_auth(request: Request, 
+                      db: AsyncSession = Depends(get_db)
+                      ):
     logger.info("Received webapp-auth request")
 
     try:
@@ -113,9 +116,10 @@ async def webapp_auth(request: Request):
             logger.error(f"User data parsing failed: {str(e)}")
             raise HTTPException(status_code=400, detail="Invalid user data in initData")
 
+        user_id = await get_user_id_by_telegram_id(session=db, telegram_id=telegram_id)
         # Token generation
-        token = encode_token({'telegram_id': telegram_id})
-        logger.info(f"Generated JWT token for user {telegram_id}")
+        token = encode_token({'user_id': user_id})
+        logger.info(f"Generated JWT token for user {user_id}")
 
         response_data = {
             "status": "authenticated",
@@ -138,9 +142,9 @@ async def record_location_for_session(
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    telegram_id = request.state.telegram_id
+    user_id = request.state.user_id
     """Endpoint to create a new location record"""
-    new_loc = await record_location(session=db, session_id=location_data.session_id, telegram_id=telegram_id, latitude=location_data.latitude,
+    new_loc = await record_location(session=db, session_id=location_data.session_id, user_id = user_id, latitude=location_data.latitude,
                                     longitude=location_data.longitude, custom_timestamp=location_data.device_timestamp, is_paused=location_data.is_paused)
     return {"message": "Location added"}
 
@@ -151,9 +155,9 @@ async def start_new_track_session(
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
-    telegram_id = request.state.telegram_id
+    user_id = request.state.user_id
     """Endpoint to create a new location record"""
-    new_session_id = await start_session(session=db, telegram_id=telegram_id, start_timestamp=session_data.start_timestamp,
+    new_session_id = await start_session(session=db, user_id = user_id, start_timestamp=session_data.start_timestamp,
                                     live_period=session_data.live_period)
     return {"message": "Session created", "session_id": new_session_id}
 
@@ -164,9 +168,9 @@ async def start_new_track_session(
     db: AsyncSession = Depends(get_db)
 ):
     try:
-        telegram_id = request.state.telegram_id
+        user_id = request.state.user_id
         """Endpoint to create a new location record"""
-        user_sessions = await get_sessions_by_telegram_id(session=db, telegram_id=telegram_id)
+        user_sessions = await get_sessions_by_telegram_id(session=db, user_id = user_id)
         r = [{"session_id": s.session_id,
               "start_timestamp": s.start_timestamp.isoformat(),
               } for s in user_sessions]
@@ -182,9 +186,9 @@ async def start_new_track_session(
     db: AsyncSession = Depends(get_db)
 ):
     try:
-        telegram_id = request.state.telegram_id
+        user_id = request.state.user_id
         """Endpoint to create a new location record"""
-        coordinates = await get_coordinates_by_session_id(session=db, track_session_id=session_id, telegram_id=telegram_id)
+        coordinates = await get_coordinates_by_session_id(session=db, track_session_id=session_id, user_id = user_id)
         processed_coordinates = [{
             "lon": c[0],
             "lat": c[1],

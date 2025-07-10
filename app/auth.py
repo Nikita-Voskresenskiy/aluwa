@@ -13,10 +13,16 @@ BOT_TOKEN_HASH = hashlib.sha256(env.BOT_TOKEN.encode())
 
 
 auth_router = APIRouter()
-
+import json
 import hmac
 import hashlib
 from typing import Dict, Any
+
+from fastapi import Depends
+from database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from queries.db_user_access import get_user_id_by_telegram_id
 
 logger = logging.getLogger('telegram.verification')
 logger.setLevel(logging.DEBUG)
@@ -112,20 +118,37 @@ async def verify_query_is_correct(params, query_hash):
 @auth_router.get('/telegram-callback')
 async def telegram_callback(
         request: Request,
-        user_id: Annotated[int, Query(alias='id')],
+        telegram_id: Annotated[int, Query(alias='id')],
         query_hash: Annotated[str, Query(alias='hash')],
         next_url: Annotated[str, Query(alias='next')] = '/',
+        db: AsyncSession = Depends(get_db)
 ):
     params = request.query_params.items()
 
     if not await verify_query_is_correct(params, query_hash):
         return PlainTextResponse('Authorization failed. Please try again', status_code=401)
 
-    token = encode_token({'telegram_id': user_id})
+    user_id = await get_user_id_by_telegram_id(session=db, telegram_id=telegram_id)
+    token = encode_token({'user_id': user_id})
     response = RedirectResponse(next_url)
     response.set_cookie(key=env.COOKIE_NAME, value=token, secure=True, samesite='lax', httponly=True)
     return response
 
+@auth_router.get('/token')
+async def telegram_token(
+        request: Request,
+        telegram_id: Annotated[int, Query(alias='telegram_id')],
+        query_hash: Annotated[str, Query(alias='hash')],
+        db: AsyncSession = Depends(get_db)
+):
+    params = request.query_params.items()
+
+    if not await verify_query_is_correct(params, query_hash):
+        return PlainTextResponse('Authorization failed. Please try again', status_code=401)
+
+    user_id = await get_user_id_by_telegram_id(session=db, telegram_id=telegram_id)
+    token = encode_token({'user_id': user_id})
+    return {"token": token}
 
 @auth_router.get('/logout')
 async def logout():
