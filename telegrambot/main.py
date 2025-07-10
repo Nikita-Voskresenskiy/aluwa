@@ -176,6 +176,10 @@ async def handle_live_location(message: Message):
 
 
 @dp.message(F.location)
+async def handle_current_location(message: Message):
+    await message.answer("❗️ Please share your live location, not current location.")
+
+@dp.message(F.location)
 @dp.edited_message(F.location) #needed to receive updates
 async def handle_location_update(message: Message):
     update_timestamp = time.time()
