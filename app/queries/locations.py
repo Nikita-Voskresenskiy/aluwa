@@ -4,11 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from models import Location, User, TrackSession  # Import Location model
 from sqlalchemy import func, update
+from sqlalchemy.sql.expression import CTE
 
 from error_handlers import SessionAccessError
 from queries.db_user_access import can_access_session
 
-
+def calculate_segment_duration(start, end):
+    return (end - start).total_seconds()
 
 async def record_location(
     session: AsyncSession,
@@ -166,7 +168,37 @@ async def calculate_session_statistics(
         raise SessionAccessError("User has no access to this track session")
 
     # First ensure all speeds are calculated
-    await calculate_speeds_for_session(session, track_session_id, user_id)
+    # await calculate_speeds_for_session(session, track_session_id, user_id)
+
+    cte = (
+        select(
+            Location,
+            func.lag(Location.is_paused, 1).over(
+                partition_by=Location.session_id,
+                order_by=Location.custom_timestamp.asc()
+            ).label('lag_paused')
+        )
+        .where(Location.session_id == track_session_id)
+        .cte('cte')
+    )
+
+    paused_segments_start = await session.execute(
+        select(
+            cte.c.custom_timestamp
+        )
+        .where(cte.c.is_paused == True)
+        .where(cte.c.lag_paused == False)
+    )
+    paused_segments_start = paused_segments_start.scalars().all()
+
+    paused_segments_end = await session.execute(
+        select(
+            cte.c.custom_timestamp
+        )
+        .where(cte.c.is_paused == False)
+        .where(cte.c.lag_paused == True)
+    )
+    paused_segments_end = paused_segments_end.scalars().all()
 
     # Get ALL locations for total duration calculation
     all_locations = await session.execute(
@@ -176,6 +208,16 @@ async def calculate_session_statistics(
     )
     all_locations = all_locations.scalars().all()
 
+    paused_segments_duartion = 0
+    if paused_segments_start:
+        if (len(paused_segments_start) == len(paused_segments_end) + 1):
+            last_paused_segment_end = all_locations[-1].custom_timestamp
+            paused_segments_end.append(last_paused_segment_end)
+        if (len(paused_segments_start) == len(paused_segments_end)):
+            for start, end in zip(paused_segments_start, paused_segments_end):
+                paused_segments_duartion += calculate_segment_duration(start, end)
+
+    #'''
     # Get only active locations for other calculations
     active_locations = await session.execute(
         select(Location)
@@ -184,6 +226,7 @@ async def calculate_session_statistics(
         .order_by(Location.custom_timestamp.asc())
     )
     active_locations = active_locations.scalars().all()
+    #'''
 
     # Initialize statistics
     stats = {
@@ -199,13 +242,14 @@ async def calculate_session_statistics(
         first_point = all_locations[0]
         last_point = all_locations[-1]
         stats['duration_s_total'] = (last_point.custom_timestamp - first_point.custom_timestamp).total_seconds()
+        stats['duration_s_active'] = stats['duration_s_total'] - paused_segments_duartion
 
     # Calculate active statistics (non-paused points only)
     if len(active_locations) > 1:
         # Calculate active duration
         first_active = active_locations[0]
         last_active = active_locations[-1]
-        stats['duration_s_active'] = (last_active.custom_timestamp - first_active.custom_timestamp).total_seconds()
+
 
         # Calculate distance and speeds
         total_distance = 0.0
@@ -238,7 +282,7 @@ async def calculate_session_statistics(
 
         stats['distance_m_total'] = total_distance
         stats['speed_mps_max'] = max_speed
-        stats['speed_mps_average'] = speed_sum / valid_speeds_count if valid_speeds_count > 0 else 0.0
+        stats['speed_mps_average'] = total_distance / stats['duration_s_active'] if stats['duration_s_active'] else 0.0
 
     # Update the TrackSession record with these statistics
     await session.execute(
