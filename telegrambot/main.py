@@ -8,7 +8,7 @@ from aiogram.enums import ParseMode
 from aiogram import F
 from aiogram.client.default import DefaultBotProperties
 
-from aiogram.types import Message, ReplyKeyboardRemove, MenuButtonWebApp, WebAppInfo
+from aiogram.types import Message, ReplyKeyboardRemove, MenuButtonWebApp, WebAppInfo, FSInputFile
 
 from aiogram.filters import Command
 from requests import send_location, req_start_track, req_stop_track, get_token
@@ -110,14 +110,18 @@ async def send_welcome(message: Message):
     await message.answer("Hi! Send me your live location to start tracking. Use /stop_track to stop tracking.")
 
 '''
+
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     # Create a keyboard with a button to request live location
-
-
-    await message.answer(
-        "Please share your live location", reply_markup=ReplyKeyboardRemove()
-    )
+    try:
+        animation = FSInputFile("example.mp4")  # Path relative to your script
+        await message.reply_animation(
+            animation,
+            caption="Please share your live location"
+        )
+    except FileNotFoundError:
+        await message.reply("Please share your live location")
 
 @dp.message(Command("stop_track"))
 async def stop_track(message: Message):
@@ -177,7 +181,14 @@ async def handle_live_location(message: Message):
 
 @dp.message(F.location)
 async def handle_current_location(message: Message):
-    await message.answer("❗️ Please share your live location, not current location.")
+    try:
+        animation = FSInputFile("example.mp4")  # Path relative to your script
+        await message.reply_animation(
+            animation,
+            caption="❗️ Please share your live location, not current location."
+        )
+    except FileNotFoundError:
+        await message.reply("❗️ Please share your live location, not current location.")
 
 @dp.message(F.location)
 @dp.edited_message(F.location) #needed to receive updates
