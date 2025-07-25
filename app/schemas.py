@@ -2,15 +2,15 @@ from pydantic import BaseModel
 from datetime import datetime
 
 class RecordLocation(BaseModel):
-    session_id: int
+    track_id: int
     latitude: float
     longitude: float
     device_timestamp: datetime
     is_paused: bool
 
-class CreateTrackSession(BaseModel):
+class CreateTrack(BaseModel):
     live_period: int
     start_timestamp: datetime
 
-class StopTrackSession(BaseModel):
-    track_session_id: int
+class StopTrack(BaseModel):
+    track_id: int

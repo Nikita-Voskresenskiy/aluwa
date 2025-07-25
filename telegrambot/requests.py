@@ -86,7 +86,7 @@ async def send_location(payload: Dict, JWT_TOKEN: str):
     except Exception as e:
         print(f"⚠️ Request failed: {str(e)}")
 
-async def start_track_session(payload: Dict, JWT_TOKEN: str):
+async def req_start_track(payload: Dict, JWT_TOKEN: str):
 
     headers = {
         "Authorization": f"Bearer {JWT_TOKEN}",
@@ -96,7 +96,7 @@ async def start_track_session(payload: Dict, JWT_TOKEN: str):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                    "{}://{}/track/start_session".format(env.PROTOCOL, env.DOMAIN_NAME),
+                    "{}://{}/track/start_track".format(env.PROTOCOL, env.DOMAIN_NAME),
                     json=payload,
                     headers=headers
             ) as response:
@@ -111,7 +111,7 @@ async def start_track_session(payload: Dict, JWT_TOKEN: str):
     except Exception as e:
         print(f"⚠️ Request failed: {str(e)}")
 
-async def stop_track_session(payload: Dict, JWT_TOKEN: str):
+async def req_stop_track(payload: Dict, JWT_TOKEN: str):
 
     headers = {
         "Authorization": f"Bearer {JWT_TOKEN}",
@@ -121,7 +121,7 @@ async def stop_track_session(payload: Dict, JWT_TOKEN: str):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                    "{}://{}/track/sessions/stop_session".format(env.PROTOCOL, env.DOMAIN_NAME),
+                    "{}://{}/track/stop_track".format(env.PROTOCOL, env.DOMAIN_NAME),
                     headers=headers,
                     json=payload
             ) as response:

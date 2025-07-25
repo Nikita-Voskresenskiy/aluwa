@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Track Sessions</title>
+    <title>Tracks</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -276,7 +276,7 @@
     </script>
     <!--
     <div class="header">
-        <h1>Tracking Sessions</h1>
+        <h1>Tracking tracks</h1>
     </div>
     -->
     <div class="cards-container" id="cardsContainer">
@@ -322,13 +322,13 @@
         let markers = [];
         let cardsData = [];
         let speedChart = null;
-        let currentSessionStats = null;
+        let currenttrackStats = null;
 
         // Initialize the page
         async function init() {
             try {
                 showLoading();
-                cardsData = await fetchSessions();
+                cardsData = await fetchtracks();
                 renderCards();
                 setupEventListeners();
             } catch (error) {
@@ -338,14 +338,14 @@
             }
         }
 
-        // Fetch sessions from backend with auth token
-        async function fetchSessions() {
+        // Fetch tracks from backend with auth token
+        async function fetchtracks() {
             if (!authToken) {
                 throw new Error('Not authenticated');
             }
 
             try {
-                const response = await fetch('/track/sessions', {
+                const response = await fetch('/track/tracks', {
                     headers: {
                         'Authorization': `Bearer ${authToken}`
                     }
@@ -380,33 +380,33 @@
                     throw new Error('Invalid data format: expected array in result field');
                 }
 
-                // Process the sessions data
-                return resultData.map(session => ({
-                    id: session.session_id,
-                    name: `Session ${session.session_id}`,
-                    date: session.start_timestamp,
-                    distance: session.distance_m_total,
-                    duration_s_active: session.duration_s_active,
-                    avgSpeed: session.speed_mps_average,
-                    maxSpeed: session.speed_mps_max,
+                // Process the tracks data
+                return resultData.map(track => ({
+                    id: track.track_id,
+                    name: `track ${track.track_id}`,
+                    date: track.start_timestamp,
+                    distance: track.distance_m_total,
+                    duration_s_active: track.duration_s_active,
+                    avgSpeed: track.speed_mps_average,
+                    maxSpeed: track.speed_mps_max,
                     coordinates: []
                 })).sort((a, b) => new Date(b.date) - new Date(a.date));
 
             } catch (error) {
-                console.error('Error fetching sessions:', error);
-                alert('Error loading sessions: ' + error.message);
+                console.error('Error fetching tracks:', error);
+                alert('Error loading tracks: ' + error.message);
                 throw error;
             }
         }
 
         // Fetch coordinates from backend with auth token
-        async function fetchCoordinates(sessionId) {
+        async function fetchCoordinates(trackId) {
             if (!authToken) {
                 throw new Error('Not authenticated');
             }
 
             try {
-                const response = await fetch(`/track/sessions/${sessionId}/coordinates`, {
+                const response = await fetch(`/track/${trackId}/coordinates`, {
                     headers: {
                         'Authorization': `Bearer ${authToken}`
                     }
@@ -459,7 +459,7 @@
             cardsContainer.innerHTML = '';
 
             if (cardsData.length === 0) {
-                cardsContainer.innerHTML = '<div class="card">No tracking sessions found</div>';
+                cardsContainer.innerHTML = '<div class="card">No tracking tracks found</div>';
                 return;
             }
 
@@ -535,21 +535,21 @@
                     showLoading();
 
                     try {
-                        const session = cardsData.find(s => s.id == cardId);
-                        if (!session) {
-                            throw new Error('Session not found');
+                        const track = cardsData.find(s => s.id == cardId);
+                        if (!track) {
+                            throw new Error('track not found');
                         }
 
-                        const coordinates = session.coordinates.length > 0
-                            ? session.coordinates
+                        const coordinates = track.coordinates.length > 0
+                            ? track.coordinates
                             : await fetchCoordinates(cardId);
 
-                        // Store current session stats
-                        currentSessionStats = {
-                            distance: session.distance,
-                            duration_s_active: session.duration_s_active,
-                            avgSpeed: session.avgSpeed,
-                            maxSpeed: session.maxSpeed,
+                        // Store current track stats
+                        currenttrackStats = {
+                            distance: track.distance,
+                            duration_s_active: track.duration_s_active,
+                            avgSpeed: track.avgSpeed,
+                            maxSpeed: track.maxSpeed,
                             speedData: coordinates.filter(coord => !coord.isPause).map(coord => ({
                                 time: new Date(coord.timestamp),
                                 speed: coord.speed * 3.6 // Convert to km/h
@@ -594,39 +594,39 @@
 
         // Render statistics
         function renderStats() {
-            if (!currentSessionStats) return;
+            if (!currenttrackStats) return;
 
             // Update stats grid
             statsGrid.innerHTML = `
                 <div class="stat-box">
                     <div>Total Distance</div>
                     <div class="stat-value">${
-                        currentSessionStats.distance !== null
-                            ? formatDistance(currentSessionStats.distance)
+                        currenttrackStats.distance !== null
+                            ? formatDistance(currenttrackStats.distance)
                             : 'N/A'
                     }</div>
                 </div>
                 <div class="stat-box">
                     <div>Active Duration</div>
                     <div class="stat-value">${
-                        currentSessionStats.duration_s_active !== null
-                            ? formatDuration(currentSessionStats.duration_s_active)
+                        currenttrackStats.duration_s_active !== null
+                            ? formatDuration(currenttrackStats.duration_s_active)
                             : 'N/A'
                     }</div>
                 </div>
                 <div class="stat-box">
                     <div>Average Speed</div>
                     <div class="stat-value">${
-                        currentSessionStats.avgSpeed !== null
-                            ? formatSpeed(currentSessionStats.avgSpeed)
+                        currenttrackStats.avgSpeed !== null
+                            ? formatSpeed(currenttrackStats.avgSpeed)
                             : 'N/A'
                     }</div>
                 </div>
                 <div class="stat-box">
                     <div>Maximum Speed</div>
                     <div class="stat-value">${
-                        currentSessionStats.maxSpeed !== null
-                            ? formatSpeed(currentSessionStats.maxSpeed)
+                        currenttrackStats.maxSpeed !== null
+                            ? formatSpeed(currenttrackStats.maxSpeed)
                             : 'N/A'
                     }</div>
                 </div>
@@ -638,7 +638,7 @@
 
         // Render speed chart
         function renderSpeedChart() {
-            if (!currentSessionStats || !currentSessionStats.speedData || currentSessionStats.speedData.length === 0) {
+            if (!currenttrackStats || !currenttrackStats.speedData || currenttrackStats.speedData.length === 0) {
                 if (speedChart) {
                     speedChart.destroy();
                     speedChart = null;
@@ -654,10 +654,10 @@
             }
 
             // Prepare data for chart
-            const labels = currentSessionStats.speedData.map(data =>
+            const labels = currenttrackStats.speedData.map(data =>
                 data.time.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})
             );
-            const data = currentSessionStats.speedData.map(data => data.speed);
+            const data = currenttrackStats.speedData.map(data => data.speed);
 
             speedChart = new Chart(ctx, {
                 type: 'line',
@@ -708,7 +708,7 @@
         // Show map with coordinates
         function showMap(coordinates) {
             if (!coordinates || coordinates.length === 0) {
-                alert('No coordinates available for this session');
+                alert('No coordinates available for this track');
                 return;
             }
 

@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from models import User, TrackSession
+from models import User, Track
 from sqlalchemy.future import select
 
 async def get_user_id_by_telegram_id(
@@ -28,15 +28,15 @@ async def get_user_id_by_telegram_id(
         user_id = r.all()[0][0].id
     return user_id
 
-async def can_access_session(
+async def can_access_track(
     db: AsyncSession,
     user_id: int,
-    session_id: int
+    track_id: int
 ) -> bool:
     """Check if user owns the track session"""
     result = await db.execute(
-        select(TrackSession)
-        .where(TrackSession.user_id == user_id)
-        .where(TrackSession.session_id == session_id)
+        select(Track)
+        .where(Track.user_id == user_id)
+        .where(Track.track_id == track_id)
     )
     return len(result.scalars().all()) > 0

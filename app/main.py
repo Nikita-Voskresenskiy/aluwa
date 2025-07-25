@@ -17,8 +17,8 @@ from auth import auth_router, verify_init_data_is_correct, encode_token, process
 
 from fastapi import Depends
 from database import get_db
-from schemas import RecordLocation, CreateTrackSession, StopTrackSession
-from queries.locations import get_sessions_by_user_id, get_coordinates_by_session_id, record_location, start_session, calculate_speeds_for_session, calculate_session_statistics
+from schemas import RecordLocation, CreateTrack, StopTrack
+from queries.locations import get_tracks_by_user_id, get_coordinates_by_track_id, record_location, start_track, calculate_speeds_for_track, calculate_track_statistics
 from queries.db_user_access import get_user_id_by_telegram_id
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -137,63 +137,63 @@ async def webapp_auth(request: Request,
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/track/location")
-async def record_location_for_session(
+async def record_location_for_track(
     location_data: RecordLocation,
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     user_id = request.state.user_id
     """Endpoint to create a new location record"""
-    new_loc = await record_location(session=db, session_id=location_data.session_id, user_id = user_id, latitude=location_data.latitude,
+    new_loc = await record_location(session=db, track_id=location_data.track_id, user_id=user_id, latitude=location_data.latitude,
                                     longitude=location_data.longitude, custom_timestamp=location_data.device_timestamp, is_paused=location_data.is_paused)
     return {"message": "Location added"}
 
 
-@app.post("/track/start_session")
-async def start_new_track_session(
-    session_data: CreateTrackSession,
+@app.post("/track/start_track")
+async def start_new_track(
+    track_data: CreateTrack,
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     user_id = request.state.user_id
     """Endpoint to create a new location record"""
-    new_session_id = await start_session(session=db, user_id = user_id, start_timestamp=session_data.start_timestamp,
-                                    live_period=session_data.live_period)
-    return {"message": "Session created", "session_id": new_session_id}
+    new_track_id = await start_track(session=db, user_id=user_id, start_timestamp=track_data.start_timestamp,
+                                    live_period=track_data.live_period)
+    return {"message": "Track created", "track_id": new_track_id}
 
 
-@app.get("/track/sessions")
-async def get_user_tarck_sessions(
+@app.get("/track/tracks")
+async def get_user_tracks(
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     try:
         user_id = request.state.user_id
         """Endpoint to create a new location record"""
-        user_sessions = await get_sessions_by_user_id(session=db, user_id=user_id)
-        r = [{"session_id": s.session_id,
+        user_tracks = await get_tracks_by_user_id(session=db, user_id=user_id)
+        r = [{"track_id": s.track_id,
               "start_timestamp": s.start_timestamp.isoformat(),
               "distance_m_total": s.distance_m_total,
               "speed_mps_average": s.speed_mps_average,
               "speed_mps_max": s.speed_mps_max,
               "duration_s_active": s.duration_s_active,
               "duration_s_total": s.duration_s_total
-              } for s in user_sessions]
+              } for s in user_tracks]
     except Exception as e:
         return {"error": True, "message": e}
 
     return {"error": False, "result": json.dumps(r)}
 
-@app.get("/track/sessions/{session_id}/coordinates")
-async def start_new_track_session(
-    session_id: int,
+@app.get("/track/{track_id}/coordinates")
+async def get_track_coordinates(
+    track_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     try:
         user_id = request.state.user_id
         """Endpoint to create a new location record"""
-        coordinates = await get_coordinates_by_session_id(session=db, track_session_id=session_id, user_id = user_id)
+        coordinates = await get_coordinates_by_track_id(session=db, track_id=track_id, user_id = user_id)
         processed_coordinates = [{
             "lon": c[0],
             "lat": c[1],
@@ -208,16 +208,16 @@ async def start_new_track_session(
 
     return {"error": False, "result": json.dumps(processed_coordinates)}
 
-@app.post("/track/sessions/stop_session")
-async def stop_track_session(
-    data: StopTrackSession,
+@app.post("/track/stop_track")
+async def stop_existing_track(
+    data: StopTrack,
     request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     try:
         user_id = request.state.user_id
-        await calculate_speeds_for_session(session=db, track_session_id=data.track_session_id, user_id=user_id)
-        statistics = await calculate_session_statistics(session=db, track_session_id=data.track_session_id, user_id=user_id)
+        await calculate_speeds_for_track(session=db, track_id=data.track_id, user_id=user_id)
+        statistics = await calculate_track_statistics(session=db, track_id=data.track_id, user_id=user_id)
 
 
     except Exception as e:

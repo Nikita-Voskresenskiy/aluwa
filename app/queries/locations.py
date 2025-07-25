@@ -2,19 +2,19 @@ from datetime import datetime
 from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from models import Location, User, TrackSession  # Import Location model
+from models import Location, User, Track  # Import Location model
 from sqlalchemy import func, update
 from sqlalchemy.sql.expression import CTE
 
 from error_handlers import SessionAccessError
-from queries.db_user_access import can_access_session
+from queries.db_user_access import can_access_track
 
 def calculate_segment_duration(start, end):
     return (end - start).total_seconds()
 
 async def record_location(
     session: AsyncSession,
-    session_id: int,
+    track_id: int,
     user_id: int,  # Add telegram_id parameter
     latitude: float,
     longitude: float,
@@ -22,14 +22,14 @@ async def record_location(
     is_paused: bool
 ) -> Location:
     """Create location record with authorization check"""
-    if not await can_access_session(session, user_id, session_id):
+    if not await can_access_track(session, user_id, track_id):
         raise ValueError("User cannot add to this track session")
 
     point = WKTElement(f'POINT({longitude} {latitude})', srid=4326)
     timestamp = custom_timestamp if custom_timestamp else datetime.utcnow()
 
     new_location = Location(
-        session_id=session_id,
+        track_id=track_id,
         custom_timestamp=timestamp,
         geom=point,
         is_paused=is_paused
@@ -40,47 +40,47 @@ async def record_location(
     await session.refresh(new_location)
     return new_location
 
-async def start_session(
+async def start_track(
         session: AsyncSession,
         user_id: int,
         start_timestamp: datetime,
         live_period: int
-) -> TrackSession:
+) -> Track:
 
-    new_session = TrackSession(
+    new_track = Track(
         user_id=user_id,
         start_timestamp=start_timestamp
     )
-    session.add(new_session)
+    session.add(new_track)
     await session.commit()
-    await session.refresh(new_session)
-    session_id = new_session.session_id
-    return session_id
+    await session.refresh(new_track)
+    track_id = new_track.track_id
+    return track_id
 
 
 
-async def get_sessions_by_user_id(
+async def get_tracks_by_user_id(
         session: AsyncSession,
         user_id: int,
         #start_num: int = 0,
         #rows_num: int = 100
-) -> list[TrackSession]:
+) -> list[Track]:
 
     result = await session.execute(
-        select(TrackSession)
-        .where(TrackSession.user_id == user_id)
-        .order_by(TrackSession.start_timestamp.asc())
+        select(Track)
+        .where(Track.user_id == user_id)
+        .order_by(Track.start_timestamp.asc())
         #.limit(start_num, rows_num)
     )
 
     return result.scalars().all()
 
-async def get_coordinates_by_session_id(
+async def get_coordinates_by_track_id(
     session: AsyncSession,
-    track_session_id: int,
+    track_id: int,
     user_id: int,
 ) -> list[Location]:
-    if not await can_access_session(session, user_id, track_session_id):
+    if not await can_access_track(session, user_id, track_id):
         raise SessionAccessError("User has no access to this track session")
 
     result = await session.execute(
@@ -91,25 +91,25 @@ async def get_coordinates_by_session_id(
             Location.is_paused,
             Location.speed_mps
         )
-        .where(Location.session_id == track_session_id)
+        .where(Location.track_id == track_id)
         .order_by(Location.custom_timestamp.asc())
     )
     return result.all()
 
 
-async def calculate_speeds_for_session(
+async def calculate_speeds_for_track(
         session: AsyncSession,
-        track_session_id: int,
+        track_id: int,
         user_id: int,
 ) -> None:
     """Calculate and update speeds for all points in a session"""
-    if not await can_access_session(session, user_id, track_session_id):
+    if not await can_access_track(session, user_id, track_id):
         raise SessionAccessError("User has no access to this track session")
 
     # Get all locations for the session ordered by timestamp
     locations = await session.execute(
         select(Location)
-        .where(Location.session_id == track_session_id)
+        .where(Location.track_id == track_id)
         .order_by(Location.custom_timestamp.asc())
     )
     locations = locations.scalars().all()
@@ -152,9 +152,9 @@ async def calculate_speeds_for_session(
     await session.commit()
 
 
-async def calculate_session_statistics(
+async def calculate_track_statistics(
         session: AsyncSession,
-        track_session_id: int,
+        track_id: int,
         user_id: int,
 ) -> dict:
     """Calculate and return session statistics including:
@@ -164,21 +164,21 @@ async def calculate_session_statistics(
     - duration_s_active (excluding paused points)
     - duration_s_total (including all points)
     """
-    if not await can_access_session(session, user_id, track_session_id):
+    if not await can_access_track(session, user_id, track_id):
         raise SessionAccessError("User has no access to this track session")
 
     # First ensure all speeds are calculated
-    # await calculate_speeds_for_session(session, track_session_id, user_id)
+    # await calculate_speeds_for_track(session, track_id, user_id)
 
     cte = (
         select(
             Location,
             func.lag(Location.is_paused, 1).over(
-                partition_by=Location.session_id,
+                partition_by=Location.track_id,
                 order_by=Location.custom_timestamp.asc()
             ).label('lag_paused')
         )
-        .where(Location.session_id == track_session_id)
+        .where(Location.track_id == track_id)
         .cte('cte')
     )
 
@@ -203,7 +203,7 @@ async def calculate_session_statistics(
     # Get ALL locations for total duration calculation
     all_locations = await session.execute(
         select(Location)
-        .where(Location.session_id == track_session_id)
+        .where(Location.track_id == track_id)
         .order_by(Location.custom_timestamp.asc())
     )
     all_locations = all_locations.scalars().all()
@@ -221,7 +221,7 @@ async def calculate_session_statistics(
     # Get only active locations for other calculations
     active_locations = await session.execute(
         select(Location)
-        .where(Location.session_id == track_session_id)
+        .where(Location.track_id == track_id)
         .where(Location.is_paused == False)
         .order_by(Location.custom_timestamp.asc())
     )
@@ -284,10 +284,10 @@ async def calculate_session_statistics(
         stats['speed_mps_max'] = max_speed
         stats['speed_mps_average'] = total_distance / stats['duration_s_active'] if stats['duration_s_active'] else 0.0
 
-    # Update the TrackSession record with these statistics
+    # Update the Track record with these statistics
     await session.execute(
-        update(TrackSession)
-        .where(TrackSession.session_id == track_session_id)
+        update(Track)
+        .where(Track.track_id == track_id)
         .values(
             distance_m_total=stats['distance_m_total'],
             speed_mps_max=stats['speed_mps_max'],
