@@ -2,6 +2,7 @@ import json
 import os
 import time
 import asyncio
+import queue
 from datetime import datetime
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
@@ -48,6 +49,7 @@ class Tracktrack:
         self.latitude = None
         self.timestamp = None
         self.task = None
+        self.queue_payload = queue.Queue()
 
         self.update_location(location, start_timestamp)
 
@@ -69,27 +71,32 @@ class Tracktrack:
     async def record_location(self):
         """Start periodic recording"""
         while self.is_active:
-            if self.track_id > 0:
-                payload = {
-                    "device_timestamp": datetime.fromtimestamp(self.timestamp).isoformat(),
-                    "track_id": self.track_id,
-                    "latitude": self.latitude,
-                    "longitude": self.longitude,
-                    "is_paused": self.is_paused
-                }
+            if self.track_id > 0 and not self.queue_payload.empty():
                 #print(payload)
-                await send_location(payload, encode_token({'user_id': self.user_id}))
-                await asyncio.sleep(10)
+                while not self.queue_payload.empty():
+                    await send_location(self.queue_payload.get(), encode_token({'user_id': self.user_id}))
+                await asyncio.sleep(120)
+
 
     def update_location(self, location, timestamp):
         """Update the latest location data"""
         self.longitude = location.longitude
         self.latitude = location.latitude
         self.timestamp = timestamp
+        payload = {
+            "device_timestamp": datetime.fromtimestamp(self.timestamp).isoformat(),
+            "track_id": self.track_id,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "is_paused": self.is_paused
+        }
+        self.queue_payload.put(payload)
 
     async def stop_track(self):
         """Stop the recording track"""
         self.is_active = False
+        while not self.queue_payload.empty():
+            await send_location(self.queue_payload.get(), encode_token({'user_id': self.user_id}))
         result = await req_stop_track({"track_id": self.track_id}, encode_token({'user_id': self.user_id}))
         if self.task:
             self.task.cancel()
