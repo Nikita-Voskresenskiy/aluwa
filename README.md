@@ -1,6 +1,9 @@
 # Aluwa Fitness Tracker Backend
 This repository contains the backend for Aluwa, a simple fitness tracker application. The backend is built with FastAPI and PostgreSQL.
 
+# Try out and explore
+https://t.me/aluwa_ru_bot
+
 # Features
 - RESTful API built with FastAPI
 - PostgreSQL database for data storage
@@ -17,5 +20,4 @@ The entire application is deployed using Docker containers orchestrated via Dock
 # Database Migrations
 Alembic is used to perform database migrations.
 
-# Try out and explore
-https://t.me/aluwa_ru_bot
+
