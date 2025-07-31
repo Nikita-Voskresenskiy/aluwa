@@ -3,8 +3,7 @@ from geoalchemy2 import WKTElement
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from models import Location, User, Track  # Import Location model
-from sqlalchemy import func, update
-from sqlalchemy.sql.expression import CTE
+from sqlalchemy import func, update, Integer
 
 from error_handlers import SessionAccessError
 from queries.db_user_access import can_access_track
@@ -152,6 +151,158 @@ async def calculate_speeds_for_track(
     await session.commit()
 
 
+async def get_segments_statistics(
+        session: AsyncSession,
+        track_id: int,
+        user_id: int,
+) -> list[dict]:
+    """Calculate segment statistics for a track using CTEs.
+
+    Returns a list of dictionaries with segment statistics including:
+    - segment_id: identifier for the segment
+    - is_paused: whether the segment is paused
+    - segment_distance: total distance in meters
+    - duration: duration as timedelta
+
+
+    with cte as
+    (select
+    locations.*,
+    LAG(geom, 1, geom) over (partition by track_id order by custom_timestamp ASC) as geom_lagged,
+    is_paused::int != LAG(is_paused::int, 1, 1) over (partition by track_id order by custom_timestamp ASC) as diff_paused
+    from locations where track_id=17),
+    cte2 as (select *,
+    ST_DistanceSphere(cte.geom, cte.geom_lagged) as sph_dist,
+    sum(diff_paused::int) over (partition by track_id order by custom_timestamp asc ROWS BETWEEN unbounded preceding and current row) as segment_id
+    from cte order by custom_timestamp asc),
+    cte3 as (select segment_id, is_paused,
+    min(cte2.custom_timestamp) over (partition by segment_id order by custom_timestamp asc) as segment_start,
+    max(cte2.custom_timestamp) over (partition by segment_id order by custom_timestamp asc) as segment_end,
+    sum(cte2.sph_dist) over (partition by segment_id order by custom_timestamp asc) as segment_distance
+    from cte2)
+    select segment_id, is_paused, max(segment_distance) as segment_distance, max(segment_end-segment_start) as duration from cte3 group by segment_id, is_paused
+
+    """
+    if not await can_access_track(session, user_id, track_id):
+        raise SessionAccessError("User has no access to this track session")
+
+    # First CTE to get previous points and paused state changes
+    cte1 = (
+        select(
+            Location,
+            func.lag(Location.geom, 1, Location.geom).over(
+                partition_by=Location.track_id,
+                order_by=Location.custom_timestamp.asc()
+            ).label('geom_lagged'),
+            (Location.is_paused.cast(Integer) != func.lag(
+                Location.is_paused.cast(Integer),
+                1,
+                1
+            ).over(
+                partition_by=Location.track_id,
+                order_by=Location.custom_timestamp.asc()
+            )).label('diff_paused')
+        )
+        .where(Location.track_id == track_id)
+        .cte('cte1')
+    )
+
+    # Second CTE to calculate distances and segment IDs
+    cte2 = (
+        select(
+            cte1,
+            func.ST_DistanceSphere(cte1.c.geom, cte1.c.geom_lagged).label('sph_dist'),
+            func.sum(cte1.c.diff_paused.cast(Integer)).over(
+                partition_by=cte1.c.track_id,
+                order_by=cte1.c.custom_timestamp.asc(),
+                range_=(None, 0)
+            ).label('segment_id')
+        )
+        .order_by(cte1.c.custom_timestamp.asc())
+        .cte('cte2')
+    )
+
+    # Third CTE to calculate segment statistics
+    cte3 = (
+        select(
+            cte2.c.segment_id,
+            cte2.c.is_paused,
+            func.min(cte2.c.custom_timestamp).over(
+                partition_by=cte2.c.segment_id,
+                order_by=cte2.c.custom_timestamp.asc()
+            ).label('segment_start'),
+            func.max(cte2.c.custom_timestamp).over(
+                partition_by=cte2.c.segment_id,
+                order_by=cte2.c.custom_timestamp.asc()
+            ).label('segment_end'),
+            func.sum(cte2.c.sph_dist).over(
+                partition_by=cte2.c.segment_id,
+                order_by=cte2.c.custom_timestamp.asc()
+            ).label('segment_distance')
+        )
+        .cte('cte3')
+    )
+
+    # Final query to get aggregated segment statistics
+    final_query = (
+        select(
+            cte3.c.segment_id,
+            cte3.c.is_paused,
+            func.max(cte3.c.segment_distance).label('segment_distance'),
+            (func.max(cte3.c.segment_end) - func.min(cte3.c.segment_start)).label('duration')
+        )
+        .group_by(cte3.c.segment_id, cte3.c.is_paused)
+        .order_by(cte3.c.segment_id)
+    )
+
+    result = await session.execute(final_query)
+    segments = result.all()
+
+    # Convert to list of dictionaries for easier processing
+    return [
+        {
+            'segment_id': seg.segment_id,
+            'is_paused': seg.is_paused,
+            'segment_distance': seg.segment_distance or 0.0,
+            'duration': seg.duration.total_seconds() if seg.duration else 0.0
+        }
+        for seg in segments
+    ]
+
+
+async def get_max_speed_for_track(
+        session: AsyncSession,
+        track_id: int,
+        user_id: int
+) -> float:
+    """Get the maximum speed for a specific track.
+
+    Args:
+        session: Async database session
+        track_id: ID of the track to query
+        user_id: ID of the user requesting the data (for authorization)
+
+    Returns:
+        Maximum speed in meters per second (float)
+
+    Raises:
+        SessionAccessError: If user doesn't have access to the track
+    """
+    if not await can_access_track(session, user_id, track_id):
+        raise SessionAccessError("User has no access to this track session")
+
+    # Query to get the maximum speed from locations for this track
+    query = select(
+        func.max(Location.speed_mps)
+    ).where(
+        Location.track_id == track_id
+    )
+
+    result = await session.execute(query)
+    max_speed = result.scalar()
+
+    return max_speed if max_speed is not None else 0.0
+
 async def calculate_track_statistics(
         session: AsyncSession,
         track_id: int,
@@ -170,63 +321,7 @@ async def calculate_track_statistics(
     # First ensure all speeds are calculated
     # await calculate_speeds_for_track(session, track_id, user_id)
 
-    cte = (
-        select(
-            Location,
-            func.lag(Location.is_paused, 1).over(
-                partition_by=Location.track_id,
-                order_by=Location.custom_timestamp.asc()
-            ).label('lag_paused')
-        )
-        .where(Location.track_id == track_id)
-        .cte('cte')
-    )
-
-    paused_segments_start = await session.execute(
-        select(
-            cte.c.custom_timestamp
-        )
-        .where(cte.c.is_paused == True)
-        .where(cte.c.lag_paused == False)
-    )
-    paused_segments_start = paused_segments_start.scalars().all()
-
-    paused_segments_end = await session.execute(
-        select(
-            cte.c.custom_timestamp
-        )
-        .where(cte.c.is_paused == False)
-        .where(cte.c.lag_paused == True)
-    )
-    paused_segments_end = paused_segments_end.scalars().all()
-
-    # Get ALL locations for total duration calculation
-    all_locations = await session.execute(
-        select(Location)
-        .where(Location.track_id == track_id)
-        .order_by(Location.custom_timestamp.asc())
-    )
-    all_locations = all_locations.scalars().all()
-
-    paused_segments_duartion = 0
-    if paused_segments_start:
-        if (len(paused_segments_start) == len(paused_segments_end) + 1):
-            last_paused_segment_end = all_locations[-1].custom_timestamp
-            paused_segments_end.append(last_paused_segment_end)
-        if (len(paused_segments_start) == len(paused_segments_end)):
-            for start, end in zip(paused_segments_start, paused_segments_end):
-                paused_segments_duartion += calculate_segment_duration(start, end)
-
-    #'''
-    # Get only active locations for other calculations
-    active_locations = await session.execute(
-        select(Location)
-        .where(Location.track_id == track_id)
-        .where(Location.is_paused == False)
-        .order_by(Location.custom_timestamp.asc())
-    )
-    active_locations = active_locations.scalars().all()
-    #'''
+    segments_statistics = await get_segments_statistics(session, track_id, user_id)
 
     # Initialize statistics
     stats = {
@@ -237,52 +332,14 @@ async def calculate_track_statistics(
         'duration_s_total': 0.0
     }
 
-    # Calculate total duration (all points)
-    if len(all_locations) > 1:
-        first_point = all_locations[0]
-        last_point = all_locations[-1]
-        stats['duration_s_total'] = (last_point.custom_timestamp - first_point.custom_timestamp).total_seconds()
-        stats['duration_s_active'] = stats['duration_s_total'] - paused_segments_duartion
+    for segment in segments_statistics:
+        stats['duration_s_total'] += segment.get("segment_duration", 0)
+        if not segment.get("is_paused", False):
+            stats['distance_m_total'] += segment.get("segment_distance", 0)
+            stats['duration_s_active'] += segment.get("segment_duration", 0)
 
-    # Calculate active statistics (non-paused points only)
-    if len(active_locations) > 1:
-        # Calculate active duration
-        first_active = active_locations[0]
-        last_active = active_locations[-1]
-
-
-        # Calculate distance and speeds
-        total_distance = 0.0
-        speed_sum = 0.0
-        max_speed = 0.0
-        valid_speeds_count = 0
-
-        for i in range(1, len(active_locations)):
-            prev_loc = active_locations[i - 1]
-            current_loc = active_locations[i]
-
-            # Calculate distance between points
-            distance_result = await session.execute(
-                select(
-                    func.ST_DistanceSphere(
-                        prev_loc.geom,
-                        current_loc.geom
-                    )
-                )
-            )
-            segment_distance = distance_result.scalar_one()
-            total_distance += segment_distance
-
-            # Use the current point's speed
-            if current_loc.speed_mps is not None:
-                speed_sum += current_loc.speed_mps
-                if current_loc.speed_mps > max_speed:
-                    max_speed = current_loc.speed_mps
-                valid_speeds_count += 1
-
-        stats['distance_m_total'] = total_distance
-        stats['speed_mps_max'] = max_speed
-        stats['speed_mps_average'] = total_distance / stats['duration_s_active'] if stats['duration_s_active'] else 0.0
+    stats['speed_mps_average'] = stats['distance_m_total'] / stats['duration_s_active'] if stats['duration_s_active'] else 0.0
+    stats['speed_mps_max'] = await get_max_speed_for_track(session, track_id, user_id)
 
     # Update the Track record with these statistics
     await session.execute(

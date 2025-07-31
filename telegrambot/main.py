@@ -47,11 +47,9 @@ class Tracktrack:
 
         self.longitude = None
         self.latitude = None
-        self.timestamp = None
+        self.timestamp = start_timestamp
         self.task = None
         self.queue_payload = queue.Queue()
-
-        self.update_location(location, start_timestamp)
 
     async def set_user_id(self):
         try:
@@ -131,7 +129,7 @@ async def cmd_start(message: Message):
         await message.reply("Please share your live location")
 
 @dp.message(Command("stop_track"))
-async def stop_track(message: Message):
+async def cmd_stop_track(message: Message):
     user_id = message.from_user.id
     if user_id in active_tracks:
         track = active_tracks[user_id]
@@ -142,7 +140,7 @@ async def stop_track(message: Message):
         await message.answer("No active track to stop.")
 
 @dp.message(Command("pause_track"))
-async def pause_track(message: Message):
+async def cmd_pause_track(message: Message):
     user_id = message.from_user.id
     if user_id in active_tracks:
         track = active_tracks[user_id]
@@ -152,11 +150,11 @@ async def pause_track(message: Message):
         await message.answer("No active track to pause.")
 
 @dp.message(Command("continue_track"))
-async def continue_track(message: Message):
+async def cmd_continue_track(message: Message):
     user_id = message.from_user.id
     if user_id in active_tracks:
         track = active_tracks[user_id]
-        track.pause_track()
+        track.continue_track()
         await message.answer("Location tracking continued. \n/pause_track to pause \n\n /stop_track to stop.")
     else:
         await message.answer("No active track to pause.")
@@ -179,6 +177,9 @@ async def handle_live_location(message: Message):
     track = Tracktrack(telegram_id, update_timestamp, location)
     await track.set_user_id()
     await track.set_track_id()
+    track.update_location(location, update_timestamp)
+
+    # start task to send data to backend
     track.task = asyncio.create_task(track.record_location())
     active_tracks[telegram_id] = track
 
