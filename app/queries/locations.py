@@ -335,10 +335,10 @@ async def calculate_track_statistics(
     }
 
     for segment in segments_statistics:
-        stats['duration_s_total'] += segment.get("segment_duration", 0)
+        stats['duration_s_total'] += segment.get("duration", 0)
         if not segment.get("is_paused", False):
             stats['distance_m_total'] += segment.get("segment_distance", 0)
-            stats['duration_s_active'] += segment.get("segment_duration", 0)
+            stats['duration_s_active'] += segment.get("duration", 0)
 
     stats['speed_mps_average'] = stats['distance_m_total'] / stats['duration_s_active'] if stats['duration_s_active'] else 0.0
     stats['speed_mps_max'] = await get_max_speed_for_track(session, track_id, user_id)
