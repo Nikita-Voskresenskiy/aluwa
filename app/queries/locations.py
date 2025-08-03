@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from models import Location, User, Track  # Import Location model
 from sqlalchemy import func, update, Integer
+from app_logger import logger
 
 from error_handlers import SessionAccessError
 from queries.db_user_access import can_access_track
@@ -322,6 +323,7 @@ async def calculate_track_statistics(
     # await calculate_speeds_for_track(session, track_id, user_id)
 
     segments_statistics = await get_segments_statistics(session, track_id, user_id)
+    logger.debug(f"Segment statistics: {segments_statistics}")
 
     # Initialize statistics
     stats = {
