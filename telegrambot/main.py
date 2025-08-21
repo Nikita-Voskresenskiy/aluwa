@@ -1,8 +1,5 @@
-import json
-import os
 import time
 import asyncio
-import queue
 from datetime import datetime
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
@@ -34,7 +31,7 @@ dp = Dispatcher()
 active_tracks = {}
 
 
-class Tracktrack:
+class Track:
     def __init__(self, telegram_id, start_timestamp, location):
         self.user_id = -1
         self.telegram_id = telegram_id
@@ -48,8 +45,8 @@ class Tracktrack:
         self.longitude = None
         self.latitude = None
         self.timestamp = start_timestamp
-        self.task = None
-        self.queue_payload = queue.Queue()
+        # self.task = None
+        # self.queue_payload = asyncio.Queue()
 
     async def set_user_id(self):
         try:
@@ -65,7 +62,7 @@ class Tracktrack:
         }
         result = await req_start_track(payload, encode_token({'user_id': self.user_id}))
         self.track_id = result.get("track_id", -1)
-
+    '''
     async def record_location(self):
         """Start periodic recording"""
         while self.is_active:
@@ -74,9 +71,10 @@ class Tracktrack:
                 while not self.queue_payload.empty():
                     await send_location(self.queue_payload.get(), encode_token({'user_id': self.user_id}))
                 await asyncio.sleep(120)
+    '''
 
 
-    def update_location(self, location, timestamp):
+    async def update_location(self, location, timestamp):
         """Update the latest location data"""
         self.longitude = location.longitude
         self.latitude = location.latitude
@@ -88,20 +86,23 @@ class Tracktrack:
             "longitude": self.longitude,
             "is_paused": self.is_paused
         }
-        self.queue_payload.put(payload)
+        await send_location(payload, encode_token({'user_id': self.user_id}))
+        #self.queue_payload.put(payload)
 
     async def stop_track(self):
         """Stop the recording track"""
         self.is_active = False
-        while not self.queue_payload.empty():
-            await send_location(self.queue_payload.get(), encode_token({'user_id': self.user_id}))
+        #while not self.queue_payload.empty():
+        #    await send_location(self.queue_payload.get(), encode_token({'user_id': self.user_id}))
         result = await req_stop_track({"track_id": self.track_id}, encode_token({'user_id': self.user_id}))
+        '''
         if self.task:
             self.task.cancel()
             try:
                 await self.task
             except asyncio.CancelledError:
                 pass
+        '''
     def pause_track(self):
         self.is_paused = True
 
@@ -174,13 +175,13 @@ async def handle_live_location(message: Message):
             return
 
     # Create new track
-    track = Tracktrack(telegram_id, update_timestamp, location)
+    track = Track(telegram_id, update_timestamp, location)
     await track.set_user_id()
     await track.set_track_id()
-    track.update_location(location, update_timestamp)
+    await track.update_location(location, update_timestamp)
 
     # start task to send data to backend
-    track.task = asyncio.create_task(track.record_location())
+    #track.task = asyncio.create_task(track.record_location())
     active_tracks[telegram_id] = track
 
     await message.answer(
@@ -207,7 +208,7 @@ async def handle_location_update(message: Message):
 
     if user_id in active_tracks and active_tracks[user_id].is_active:
         track = active_tracks[user_id]
-        track.update_location(location, update_timestamp)
+        await track.update_location(location, update_timestamp)
 
 async def on_startup(dispatcher):
     if env.PROTOCOL == "https":
